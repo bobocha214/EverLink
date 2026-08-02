@@ -56,7 +56,7 @@ class _EverlinkAppState extends State<EverlinkApp> {
   Widget build(BuildContext context) {
     final settings = SettingsService.instance;
     return MaterialApp(
-      title: 'EverLink 设备调试',
+      title: 'EverLink',
       debugShowCheckedModeBanner: false,
       theme: _buildTheme(Brightness.light),
       darkTheme: _buildTheme(Brightness.dark),

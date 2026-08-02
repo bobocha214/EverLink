@@ -2,8 +2,21 @@
     <!-- 网络访问权限：Modbus TCP / MQTT 均通过 TCP 直连设备，必须声明 -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+    <!-- 快传设备发现：Wi-Fi 驱动默认丢弃多播/广播帧，需持有 MulticastLock -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <!-- Android 13+ 通过 Wi-Fi 发现附近设备所需（不用于定位） -->
+    <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES"
+        android:usesPermissionFlags="neverForLocation" />
+    <!-- 保存二维码到系统相册：Android 10+ 走 MediaStore 无需此权限；
+         仅 Android 9 及以下老设备写入公共存储目录才需要，故限制 maxSdkVersion=28 -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
     <application
-        android:label="everlink"
+        android:label="EverLink"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true">

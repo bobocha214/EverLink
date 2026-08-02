@@ -43,16 +43,26 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     SessionManager.instance.addListener(_onSessionsChanged);
+    // 协议启用/停用后，筛选条与设备列表需实时跟随。
+    SettingsService.instance.addListener(_onSessionsChanged);
   }
 
   @override
   void dispose() {
     SessionManager.instance.removeListener(_onSessionsChanged);
+    SettingsService.instance.removeListener(_onSessionsChanged);
     super.dispose();
   }
 
   void _onSessionsChanged() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() {
+      // 选中的协议若被停用，其标签会消失，同步重置筛选以免筛选条无高亮项。
+      if (_typeFilter != null &&
+          !SettingsService.instance.isProtocolEnabled(_typeFilter!)) {
+        _typeFilter = null;
+      }
+    });
   }
 
   /// 经过名称 + 类型 + 状态 + 设备筛选后的设备列表。
@@ -65,8 +75,13 @@ class _HomePageState extends State<HomePage> {
         (_deviceFilter != null && validDevices.contains(_deviceFilter))
             ? _deviceFilter
             : null;
+    // 协议被停用后其筛选标签会消失，忽略残留筛选避免列表一直为空。
+    final typeFilter = (_typeFilter != null &&
+            SettingsService.instance.isProtocolEnabled(_typeFilter!))
+        ? _typeFilter
+        : null;
     return mgr.sessions.where((s) {
-      if (_typeFilter != null && s.type != _typeFilter) return false;
+      if (typeFilter != null && s.type != typeFilter) return false;
       if (_statusFilter != null && s.status != _statusFilter) return false;
       if (deviceFilter != null && s.name != deviceFilter) return false;
       if (q.isNotEmpty && !s.name.toLowerCase().contains(q)) return false;
@@ -219,7 +234,9 @@ class _HomePageState extends State<HomePage> {
     final sessions = _visibleSessions;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('EverLink 设备调试')),
+      appBar: AppBar(
+        title: const Text('EverLink 设备调试'),
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _addDevice,
         icon: const Icon(Icons.add),
