@@ -18,7 +18,7 @@ import 'package:everlink/ui/widgets/add_device_sheet.dart';
 /// 首页：以卡片形式展示用户保存的所有设备，并汇总在线 / 离线 / 连接中数量。
 ///
 /// 每张卡片自带连接 / 断开开关与“调试”入口，点击卡片主体也可直接进入调试页；
-/// 支持按名称搜索、按协议类型与连接状态筛选；长按编辑图标可重命名设备。
+/// 支持按名称搜索、按协议类型、连接状态与设备筛选；长按编辑图标可重命名设备。
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
@@ -32,6 +32,9 @@ class _HomePageState extends State<HomePage> {
 
   /// 按连接状态筛选（null 表示全部）。
   DeviceConnectionState? _statusFilter;
+
+  /// 按设备名称筛选（null 表示全部）。
+  String? _deviceFilter;
 
   /// 按设备名称搜索（不区分大小写）。
   String _nameQuery = '';
@@ -52,12 +55,20 @@ class _HomePageState extends State<HomePage> {
     if (mounted) setState(() {});
   }
 
-  /// 经过名称 + 类型 + 状态筛选后的设备列表。
+  /// 经过名称 + 类型 + 状态 + 设备筛选后的设备列表。
   List<DeviceSession> get _visibleSessions {
     final q = _nameQuery.trim().toLowerCase();
-    return SessionManager.instance.sessions.where((s) {
+    final mgr = SessionManager.instance;
+    // 设备下拉框单选无法像 Chip 再点取消，做安全校验避免残留筛选卡死。
+    final validDevices = mgr.sessions.map((s) => s.name).toSet();
+    final deviceFilter =
+        (_deviceFilter != null && validDevices.contains(_deviceFilter))
+            ? _deviceFilter
+            : null;
+    return mgr.sessions.where((s) {
       if (_typeFilter != null && s.type != _typeFilter) return false;
       if (_statusFilter != null && s.status != _statusFilter) return false;
+      if (deviceFilter != null && s.name != deviceFilter) return false;
       if (q.isNotEmpty && !s.name.toLowerCase().contains(q)) return false;
       return true;
     }).toList();
@@ -316,7 +327,51 @@ class _HomePageState extends State<HomePage> {
               runSpacing: 8,
               children: statusChips,
             ),
+            const SizedBox(height: 8),
+            _buildDeviceDropdown(),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// 首页设备下拉框：按设备名过滤列表（设备多时比一排 Chip 更省空间）。
+  Widget _buildDeviceDropdown() {
+    final deviceNames = SessionManager.instance.sessions
+        .map((s) => s.name)
+        .where((n) => n.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
+    if (deviceNames.isEmpty) return const SizedBox.shrink();
+    return InputDecorator(
+      decoration: InputDecoration(
+        isDense: true,
+        prefixIcon: const Icon(Icons.devices_outlined, size: 20),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
+        contentPadding: const EdgeInsets.symmetric(vertical: 8),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          isExpanded: true,
+          value: (_deviceFilter != null && deviceNames.contains(_deviceFilter))
+              ? _deviceFilter
+              : null,
+          hint: const Text('按设备筛选'),
+          items: [
+            const DropdownMenuItem<String>(
+              value: null,
+              child: Text('全部设备'),
+            ),
+            for (final d in deviceNames)
+              DropdownMenuItem<String>(
+                value: d,
+                child: Text(d),
+              ),
+          ],
+          onChanged: (v) => setState(() => _deviceFilter = v),
         ),
       ),
     );
