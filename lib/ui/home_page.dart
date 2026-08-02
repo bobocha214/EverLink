@@ -305,14 +305,16 @@ class _HomePageState extends State<HomePage> {
               onChanged: (v) => setState(() => _nameQuery = v),
             ),
             const SizedBox(height: 10),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(children: typeChips),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: typeChips,
             ),
             const SizedBox(height: 8),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(children: statusChips),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: statusChips,
             ),
           ],
         ),
@@ -514,13 +516,10 @@ class _FilterChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: ChoiceChip(
-        label: Text(label),
-        selected: selected,
-        onSelected: (_) => onSelected(),
-      ),
+    return ChoiceChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: (_) => onSelected(),
     );
   }
 }
