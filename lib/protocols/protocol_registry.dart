@@ -4,6 +4,9 @@ import 'package:everlink/models/protocol_type.dart';
 import 'package:everlink/protocols/device_protocol.dart';
 import 'package:everlink/protocols/modbus_tcp_protocol.dart';
 import 'package:everlink/protocols/mqtt_protocol.dart';
+import 'package:everlink/protocols/websocket_protocol.dart';
+import 'package:everlink/protocols/http_protocol.dart';
+import 'package:everlink/protocols/opcua_protocol.dart';
 
 /// 协议描述符，用于在不依赖具体实现的情况下向 UI 暴露元信息。
 class ProtocolDescriptor {
@@ -45,6 +48,27 @@ class ProtocolRegistry {
       description: '物联网消息发布 / 订阅',
       icon: Icons.cloud_queue,
       create: () => MqttProtocol(),
+    ),
+    ProtocolDescriptor(
+      type: ProtocolType.webSocket,
+      name: 'WebSocket',
+      description: '全双工长连接，向服务端收发消息',
+      icon: Icons.cable,
+      create: () => WebSocketProtocol(),
+    ),
+    ProtocolDescriptor(
+      type: ProtocolType.http,
+      name: 'HTTP',
+      description: 'REST / HTTP 端点请求调试',
+      icon: Icons.http,
+      create: () => HttpProtocol(),
+    ),
+    ProtocolDescriptor(
+      type: ProtocolType.opcUa,
+      name: 'OPC UA',
+      description: '工业设备地址空间浏览与变量读写',
+      icon: Icons.account_tree,
+      create: () => OpcUaProtocol(),
     ),
   ];
 

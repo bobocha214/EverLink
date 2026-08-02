@@ -5,6 +5,9 @@
 enum ProtocolType {
   modbusTcp,
   mqtt,
+  webSocket,
+  http,
+  opcUa,
 }
 
 extension ProtocolTypeX on ProtocolType {
@@ -15,6 +18,12 @@ extension ProtocolTypeX on ProtocolType {
         return 'Modbus TCP';
       case ProtocolType.mqtt:
         return 'MQTT';
+      case ProtocolType.webSocket:
+        return 'WebSocket';
+      case ProtocolType.http:
+        return 'HTTP';
+      case ProtocolType.opcUa:
+        return 'OPC UA';
     }
   }
 }

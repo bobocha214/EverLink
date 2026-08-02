@@ -36,6 +36,12 @@ enum ModbusDataType {
 
   /// 该类型占用的寄存器数量。
   final int registerCount;
+
+  /// 是否占用多个寄存器（32 位 / 浮点需要 2 个寄存器）。
+  bool get isMultiRegister => registerCount > 1;
+
+  /// 是否为浮点类型（值以 double 表示）。
+  bool get isFloat => this == ModbusDataType.float32;
 }
 
 /// 字节序（用于多寄存器数据解析）。

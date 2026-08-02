@@ -37,6 +37,10 @@ class ConnectionManager extends ChangeNotifier {
   /// 当前连接状态。
   DeviceConnectionState get state => _state;
 
+  /// 连接状态变化流（转发自协议实例），便于外部监听。
+  Stream<DeviceConnectionState> get connectionStateStream =>
+      protocol.connectionStateStream;
+
   /// 最近错误信息。
   String? get lastError => protocol.lastError;
 
@@ -76,6 +80,12 @@ class ConnectionManager extends ChangeNotifier {
           host: 'broker.emqx.io',
           clientId: 'everlink_${DateTime.now().millisecondsSinceEpoch}',
         );
+      case ProtocolType.webSocket:
+        return const WebSocketConnectionConfig(url: 'ws://echo.websocket.events');
+      case ProtocolType.http:
+        return const HttpConnectionConfig(baseUrl: 'https://httpbin.org');
+      case ProtocolType.opcUa:
+        return const OpcUaConnectionConfig();
     }
   }
 }

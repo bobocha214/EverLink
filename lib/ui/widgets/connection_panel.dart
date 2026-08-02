@@ -7,11 +7,13 @@ class ConnectionPanel extends StatelessWidget {
   const ConnectionPanel({
     super.key,
     required this.manager,
-    required this.onConnectPressed,
+    this.onConnectPressed,
   });
 
   final ConnectionManager manager;
-  final VoidCallback onConnectPressed;
+
+  /// 点击“连接”按钮时的回调。若不传，则使用当前配置直接连接。
+  final VoidCallback? onConnectPressed;
 
   @override
   Widget build(BuildContext context) {
@@ -60,7 +62,9 @@ class ConnectionPanel extends StatelessWidget {
               )
             else
               FilledButton(
-                onPressed: connecting ? null : onConnectPressed,
+                onPressed: connecting
+                    ? null
+                    : (onConnectPressed ?? () => manager.connect(manager.config)),
                 child: Text(connecting ? '连接中' : '连接'),
               ),
           ],
