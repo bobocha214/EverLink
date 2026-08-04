@@ -9,6 +9,9 @@
     <!-- Android 13+ 通过 Wi-Fi 发现附近设备所需（不用于定位） -->
     <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES"
         android:usesPermissionFlags="neverForLocation" />
+    <!-- 获取 WiFi 名称(SSID)、信号强度等需要精确定位权限（Android 8+） -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <!-- 保存二维码到系统相册：Android 10+ 走 MediaStore 无需此权限；
          仅 Android 9 及以下老设备写入公共存储目录才需要，故限制 maxSdkVersion=28 -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"

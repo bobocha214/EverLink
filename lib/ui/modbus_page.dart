@@ -1,943 +1,657 @@
 import 'dart:async';
-import 'dart:typed_data';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:modbus_client/modbus_client.dart';
+import 'package:flutter/services.dart';
 
-import 'package:everlink/models/connection_config.dart';
-import 'package:everlink/models/device_session.dart';
-import 'package:everlink/models/modbus_models.dart';
-import 'package:everlink/protocols/modbus_tcp_protocol.dart';
-import 'package:everlink/services/connection_manager.dart';
-import 'package:everlink/services/history_service.dart';
-import 'package:everlink/services/session_manager.dart';
-import 'package:everlink/ui/widgets/connection_panel.dart';
+import 'package:everlink/services/data_point.dart';
+import 'package:everlink/services/modbus/modbus_client.dart';
+import 'package:everlink/services/modbus/modbus_parse.dart';
 
-/// Modbus TCP 调试页：支持线圈 / 寄存器读写，并把每次操作沉淀到历史记录。
-///
-/// 寄存器读取可选择数据类型（16 位 / 32 位 / 浮点）与字节序；读取结果以可
-/// 编辑行呈现，支持单点内联写回。线圈读取后点击卡片即可切换并写回。
+enum _ModbusFunc {
+  readHolding(0x03, '读保持寄存器 (0x03)'),
+  readInput(0x04, '读输入寄存器 (0x04)'),
+  writeSingle(0x06, '写单寄存器 (0x06)'),
+  writeMultiple(0x10, '写多寄存器 (0x10)'),
+  writeCoil(0x05, '强制单线圈 (0x05)'),
+  writeCoils(0x0F, '强制多线圈 (0x0F)');
+
+  const _ModbusFunc(this.code, this.label);
+  final int code;
+  final String label;
+  bool get isRead => this == readHolding || this == readInput;
+}
+
 class ModbusPage extends StatefulWidget {
-  const ModbusPage({super.key, required this.session});
-
-  final DeviceSession session;
+  const ModbusPage({super.key});
 
   @override
   State<ModbusPage> createState() => _ModbusPageState();
 }
 
 class _ModbusPageState extends State<ModbusPage> {
-  late final ConnectionManager _manager;
-  final _formKey = GlobalKey<FormState>();
-
-  final _hostCtl = TextEditingController();
-  final _portCtl = TextEditingController();
-  final _unitCtl = TextEditingController();
-  final _timeoutCtl = TextEditingController();
-
-  ModbusFunction _function = ModbusFunction.readHoldingRegisters;
+  final _ipCtl = TextEditingController(text: '192.168.1.1');
+  final _portCtl = TextEditingController(text: '502');
+  final _slaveCtl = TextEditingController(text: '1');
   final _addrCtl = TextEditingController(text: '0');
-  final _qtyCtl = TextEditingController(text: '10');
-  final _valueCtl = TextEditingController(text: '1');
+  final _countCtl = TextEditingController(text: '10');
+  final _valueCtl = TextEditingController(text: '0');
+  final _valuesCtl = TextEditingController(text: '0, 1, 2');
+  final _statesCtl = TextEditingController(text: '1, 0, 1');
+  final _baseIpCtl = TextEditingController(text: '192.168.1');
 
-  /// 寄存器数据类型与字节序（仅寄存器读取使用）。
-  ModbusDataType _dataType = ModbusDataType.uint16;
-  ByteOrder _byteOrder = ByteOrder.abcd;
+  _ModbusFunc _func = _ModbusFunc.readHolding;
+  ModbusDataType _dataType = ModbusDataType.float32;
+  bool _wordSwap = false;
+  bool _byteSwap = false;
+  bool _coilOn = true;
 
-  /// 最近一次读取的结构化结果。
-  ModbusFunction? _lastReadFunction;
-  ModbusDataType _lastDataType = ModbusDataType.uint16;
-  ByteOrder _lastByteOrder = ByteOrder.abcd;
-  int _lastReadAddr = 0;
-  List<num>? _regValues;
-  List<bool>? _bitValues;
-  DateTime? _lastReadTime;
+  ModbusTcpClient? _client;
+  bool get _connected => _client?.isConnected ?? false;
 
-  /// 每个寄存器行的可编辑值控制器（按行索引）。
-  final List<TextEditingController> _regCtls = [];
+  final List<String> _log = <String>[];
+  List<String> _results = <String>[];
+  List<double> _history = <double>[];
+  Timer? _pollTimer;
+  bool _polling = false;
+  final _pollIntervalCtl = TextEditingController(text: '1000');
 
-  /// 与 [_regCtls] 对应的焦点节点，用于判断某行是否正在被用户编辑。
-  final List<FocusNode> _regFocus = [];
-
-  bool _busy = false;
-  String? _error;
-  String? _feedback;
-
-  bool _autoRefresh = false;
-  Timer? _refreshTimer;
+  List<String> _scanResults = <String>[];
+  bool _scanning = false;
 
   @override
-  void initState() {
-    super.initState();
-    final c = widget.session.config as ModbusConnectionConfig;
-    _hostCtl.text = c.host;
-    _portCtl.text = '${c.port}';
-    _unitCtl.text = '${c.unitId}';
-    _timeoutCtl.text = '${c.timeout.inSeconds}';
-    _manager = SessionManager.instance.ensureManager(widget.session);
-    _manager.addListener(_onManagerChanged);
-  }
-
-  void _onManagerChanged() {
-    if (mounted) setState(() {});
-  }
-
-  /// 是否正在读取保持寄存器（可写回）。输入寄存器只读。
-  bool get _lastIsHoldingRead =>
-      _lastReadFunction == ModbusFunction.readHoldingRegisters;
-
-  void _toggleAutoRefresh(bool value) {
-    setState(() => _autoRefresh = value);
-    _refreshTimer?.cancel();
-    _refreshTimer = null;
-    if (value) {
-      _refreshTimer = Timer.periodic(const Duration(seconds: 2), (_) {
-        if (_manager.state == DeviceConnectionState.connected &&
-            !_busy &&
-            _isRead) {
-          _execute(log: false);
-        }
-      });
+  void dispose() {
+    _pollTimer?.cancel();
+    _client?.disconnect();
+    for (final c in [
+      _ipCtl,
+      _portCtl,
+      _slaveCtl,
+      _addrCtl,
+      _countCtl,
+      _valueCtl,
+      _valuesCtl,
+      _statesCtl,
+      _baseIpCtl,
+      _pollIntervalCtl,
+    ]) {
+      c.dispose();
     }
-  }
-
-  void _syncConfigFromFields() {
-    final cfg = ModbusConnectionConfig(
-      host: _hostCtl.text.trim(),
-      port: int.tryParse(_portCtl.text) ?? 502,
-      unitId: int.tryParse(_unitCtl.text) ?? 1,
-      timeout: Duration(seconds: int.tryParse(_timeoutCtl.text) ?? 3),
-    );
-    _manager.updateConfig(cfg);
-    widget.session.config = cfg;
+    super.dispose();
   }
 
   Future<void> _connect() async {
-    if (!_formKey.currentState!.validate()) return;
-    _syncConfigFromFields();
+    final ip = _ipCtl.text.trim();
+    final port = int.tryParse(_portCtl.text) ?? 502;
+    _client?.disconnect();
+    _client = ModbusTcpClient(ip, port);
     try {
-      await _manager.connect();
-      final ok = _manager.state == DeviceConnectionState.connected;
-      HistoryService.instance.add(
-        HistoryRecord(
-          time: DateTime.now(),
-          type: widget.session.type,
-          deviceName: widget.session.name,
-          op: HistoryOp.connect,
-          success: ok,
-          summary: ok
-              ? '连接成功：${widget.session.name}'
-              : '连接失败：${widget.session.name}',
-          error: ok ? null : _manager.lastError,
-        ),
-      );
-    } catch (e) {
-      HistoryService.instance.add(
-        HistoryRecord(
-          time: DateTime.now(),
-          type: widget.session.type,
-          deviceName: widget.session.name,
-          op: HistoryOp.connect,
-          success: false,
-          summary: '连接失败：${widget.session.name}',
-          error: e.toString(),
-        ),
-      );
+      await _client!.connect();
+      _addLog('[连接] $ip:$port');
+      if (mounted) setState(() {});
+    } on Object catch (e) {
+      _addLog('[连接失败] $e');
+      _client = null;
+      if (mounted) setState(() {});
     }
   }
 
-  Future<void> _disconnect() async {
-    await _manager.disconnect();
-    HistoryService.instance.add(
-      HistoryRecord(
+  void _disconnect() {
+    _stopPoll();
+    _client?.disconnect();
+    _client = null;
+    _addLog('[断开]');
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _exec() async {
+    if (_client == null || !_connected) {
+      await _connect();
+      if (_client == null) return;
+    }
+    final slave = int.tryParse(_slaveCtl.text) ?? 1;
+    final addr = int.tryParse(_addrCtl.text) ?? 0;
+    try {
+      if (_func.isRead) {
+        final count = int.tryParse(_countCtl.text) ?? 1;
+        final regs =
+            await _client!.readRegisters(slave, _func.code, addr, count);
+        _showRawFrames();
+        _parseAndShow(regs, addr, slave);
+      } else if (_func == _ModbusFunc.writeSingle) {
+        final v = int.tryParse(_valueCtl.text) ?? 0;
+        await _client!.writeRegister(slave, addr, v);
+        _showRawFrames();
+        _addLog('[写] 0x06 addr=$addr value=$v');
+      } else if (_func == _ModbusFunc.writeMultiple) {
+        final vals = _valuesCtl.text
+            .split(',')
+            .map((e) => int.tryParse(e.trim()))
+            .whereType<int>()
+            .toList();
+        await _client!.writeRegisters(slave, addr, vals);
+        _showRawFrames();
+        _addLog('[写] 0x10 addr=$addr count=${vals.length}');
+      } else if (_func == _ModbusFunc.writeCoil) {
+        await _client!.writeCoil(slave, addr, _coilOn);
+        _showRawFrames();
+        _addLog('[写] 0x05 addr=$addr on=$_coilOn');
+      } else if (_func == _ModbusFunc.writeCoils) {
+        final states = _statesCtl.text
+            .split(',')
+            .map((e) => e.trim() == '1' || e.trim().toLowerCase() == 'true')
+            .toList();
+        await _client!.writeCoils(slave, addr, states);
+        _showRawFrames();
+        _addLog('[写] 0x0F addr=$addr count=${states.length}');
+      }
+      if (mounted) setState(() {});
+    } on Object catch (e) {
+      _addLog('[错误] $e');
+      if (mounted) setState(() {});
+    }
+  }
+
+  void _parseAndShow(List<int> regs, int addr, int slave) {
+    final order = ModbusByteOrder(wordSwap: _wordSwap, byteSwap: _byteSwap);
+    final out = <String>[];
+    final step = _dataType.registerCount;
+    num? first;
+    for (var i = 0; i + step <= regs.length; i += step) {
+      final v = parseModbusValue(regs, _dataType,
+          start: i, order: order);
+      final tag = '${addr + i}';
+      out.add('[$tag] ${_dataType.label} = $v');
+      if (first == null && v != null) first = v;
+      // 写入数据点总线，供记录仪/可视化消费
+      DataPointBus.instance.emit(DataPoint(
+        source: 'modbus',
+        tag: tag,
+        value: v ?? 0,
         time: DateTime.now(),
-        type: widget.session.type,
-        deviceName: widget.session.name,
-        op: HistoryOp.disconnect,
-        success: true,
-        summary: '断开连接：${widget.session.name}',
-      ),
-    );
-  }
-
-  Future<void> _execute({bool log = true}) async {
-    setState(() {
-      _busy = true;
-      _error = null;
-      _feedback = null;
-    });
-    final op = _function.canRead ? HistoryOp.read : HistoryOp.write;
-    try {
-      final proto = _manager.protocol as ModbusTcpProtocol;
-      switch (_function) {
-        case ModbusFunction.readCoils:
-        case ModbusFunction.readDiscreteInputs:
-          final bits = await proto.readBits(
-            _function == ModbusFunction.readCoils
-                ? ModbusElementType.coil
-                : ModbusElementType.discreteInput,
-            _addr,
-            _qty,
-          );
-          setState(() {
-            _bitValues = bits;
-            _regValues = null;
-            _lastReadFunction = _function;
-            _lastReadAddr = _addr;
-            _lastReadTime = DateTime.now();
-            _clearRegCtls();
-          });
-        case ModbusFunction.readHoldingRegisters:
-        case ModbusFunction.readInputRegisters:
-          final regs = await proto.readTypedRegisters(
-            type: _function == ModbusFunction.readHoldingRegisters
-                ? ModbusElementType.holdingRegister
-                : ModbusElementType.inputRegister,
-            address: _addr,
-            count: _qty,
-            dataType: _dataType,
-            byteOrder: _byteOrder,
-          );
-          setState(() {
-            _regValues = regs;
-            _bitValues = null;
-            _lastReadFunction = _function;
-            _lastDataType = _dataType;
-            _lastByteOrder = _byteOrder;
-            _lastReadAddr = _addr;
-            _lastReadTime = DateTime.now();
-            _syncRegCtls(regs.length);
-          });
-        case ModbusFunction.writeSingleCoil:
-          await proto.writeSingleCoil(_addr, _value != 0);
-          _feedback = '已写线圈 地址 $_addr = ${_value != 0 ? 1 : 0}';
-        case ModbusFunction.writeSingleRegister:
-          await proto.writeSingleRegister(_addr, _value);
-          _feedback = '已写保持寄存器 地址 $_addr = $_value';
-        case ModbusFunction.writeMultipleCoils:
-          final bits = _valueCtl.text
-              .split(RegExp(r'[\s,]+'))
-              .where((s) => s.isNotEmpty)
-              .map((s) => s.trim() == '1' || s.toLowerCase() == 'true')
-              .toList();
-          await proto.writeMultipleCoils(_addr, bits);
-          _feedback = '已写 ${bits.length} 个线圈，起始地址 $_addr';
-        case ModbusFunction.writeMultipleRegisters:
-          final vals = _valueCtl.text
-              .split(RegExp(r'[\s,]+'))
-              .where((s) => s.isNotEmpty)
-              .map((s) => int.parse(s))
-              .toList();
-          await proto.writeMultipleRegisters(_addr, vals);
-          _feedback = '已写 ${vals.length} 个保持寄存器，起始地址 $_addr';
-      }
-      if (log) {
-        HistoryService.instance.add(
-          HistoryRecord(
-            time: DateTime.now(),
-            type: widget.session.type,
-            deviceName: widget.session.name,
-            op: op,
-            success: true,
-            summary: _summaryFor(op),
-            detail: _resultDetailText(),
-          ),
-        );
-      }
-    } catch (e) {
-      _error = '${_summaryFor(op)} 失败：${e.toString()}';
-      if (log) {
-        HistoryService.instance.add(
-          HistoryRecord(
-            time: DateTime.now(),
-            type: widget.session.type,
-            deviceName: widget.session.name,
-            op: op,
-            success: false,
-            summary: _summaryFor(op),
-            error: e.toString(),
-          ),
-        );
-      }
-    } finally {
-      setState(() => _busy = false);
+      ));
     }
+    if (first != null) {
+      _history.add(first.toDouble());
+      if (_history.length > 300) _history.removeAt(0);
+    }
+    _addLog('[读] ${regs.length} 寄存器 → ${out.length} 值');
+    _results = out;
+    if (mounted) setState(() {});
   }
 
-  /// 单点写回：把第 [index] 行编辑框中的值写到对应地址。
-  Future<void> _writeRegisterAt(int index) async {
-    final addr = _lastReadAddr + index * _lastDataType.registerCount;
-    final text = _regCtls[index].text;
-    num val;
-    try {
-      val = _lastDataType.isFloat
-          ? double.parse(text)
-          : int.parse(text);
-    } catch (_) {
-      setState(() => _error = '第 ${index + 1} 行的值“$text”不是合法数字');
+  void _showRawFrames() {
+    _addLog('[Tx] ${_toHex(_client?.lastRequest)}');
+    _addLog('[Rx] ${_toHex(_client?.lastResponse)}');
+  }
+
+  void _addLog(String s) {
+    _log.add('${_ts()} $s');
+    if (_log.length > 500) _log.removeAt(0);
+  }
+
+  String _ts() {
+    final t = DateTime.now();
+    return '${t.hour.toString().padLeft(2, '0')}:'
+        '${t.minute.toString().padLeft(2, '0')}:'
+        '${t.second.toString().padLeft(2, '0')}';
+  }
+
+  static String _toHex(List<int>? b) =>
+      b == null ? '(空)' : b.map((e) => e.toRadixString(16).padLeft(2, '0').toUpperCase()).join(' ');
+
+  void _startPoll() {
+    final ms = int.tryParse(_pollIntervalCtl.text) ?? 1000;
+    if (ms < 100) return;
+    _polling = true;
+    _pollTimer = Timer.periodic(Duration(milliseconds: ms), (_) => _exec());
+    if (mounted) setState(() {});
+  }
+
+  void _stopPoll() {
+    _pollTimer?.cancel();
+    _pollTimer = null;
+    _polling = false;
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _scan() async {
+    final base = _baseIpCtl.text.trim();
+    if (!base.contains(RegExp(r'^\d+\.\d+\.\d+$'))) {
+      _addLog('[扫描] 网段格式应为 x.x.x');
+      if (mounted) setState(() {});
       return;
     }
-    setState(() => _busy = true);
-    try {
-      final proto = _manager.protocol as ModbusTcpProtocol;
-      await proto.writeTypedRegister(
-        address: addr,
-        value: val,
-        dataType: _lastDataType,
-        byteOrder: _lastByteOrder,
+    _scanning = true;
+    _scanResults = <String>[];
+    if (mounted) setState(() {});
+    final futures = <Future<void>>[];
+    for (var i = 1; i <= 254; i++) {
+      final ip = '$base.$i';
+      futures.add(
+        Socket.connect(ip, 502, timeout: const Duration(milliseconds: 300))
+            .then((s) {
+          s.destroy();
+          _scanResults.add(ip);
+          if (mounted) setState(() {});
+        }).catchError((_) {}),
       );
-      HistoryService.instance.add(
-        HistoryRecord(
-          time: DateTime.now(),
-          type: widget.session.type,
-          deviceName: widget.session.name,
-          op: HistoryOp.write,
-          success: true,
-          summary: '写入 ${_lastDataType.label} @$addr',
-          detail: '值：$val',
-        ),
-      );
-      _feedback = '已写 ${_lastDataType.label} 地址 $addr = $val';
-      // 写后刷新该行，回显设备真实值。
-      await _execute(log: false);
-    } catch (e) {
-      _error = '写入地址 $addr 失败：${e.toString()}';
-    } finally {
-      setState(() => _busy = false);
     }
+    await Future.wait(futures);
+    _scanning = false;
+    _addLog('[扫描] 发现 ${_scanResults.length} 个 502 从站');
+    if (mounted) setState(() {});
   }
-
-  /// 点击线圈卡片：切换 ON/OFF 并立即写回（仅线圈可写，离散输入只读）。
-  Future<void> _toggleBit(int index) async {
-    if (_lastReadFunction != ModbusFunction.readCoils) return;
-    final addr = _lastReadAddr + index;
-    final next = !(_bitValues![index]);
-    setState(() => _bitValues![index] = next);
-    try {
-      final proto = _manager.protocol as ModbusTcpProtocol;
-      await proto.writeSingleCoil(addr, next);
-      HistoryService.instance.add(
-        HistoryRecord(
-          time: DateTime.now(),
-          type: widget.session.type,
-          deviceName: widget.session.name,
-          op: HistoryOp.write,
-          success: true,
-          summary: '写线圈 @$addr',
-          detail: '值：${next ? 1 : 0}',
-        ),
-      );
-    } catch (e) {
-      // 写失败则回滚显示。
-      setState(() => _bitValues![index] = !next);
-      _error = '写线圈 $addr 失败：${e.toString()}';
-    }
-  }
-
-  /// 把读取到的寄存器值同步到编辑框（跳过正在编辑的行）。
-  void _syncRegCtls(int count) {
-    while (_regCtls.length < count) {
-      _regCtls.add(TextEditingController());
-      _regFocus.add(FocusNode());
-    }
-    while (_regCtls.length > count) {
-      _regCtls.removeLast().dispose();
-      _regFocus.removeLast().dispose();
-    }
-    final vals = _regValues;
-    if (vals == null) return;
-    for (var i = 0; i < count; i++) {
-      if (!_regFocus[i].hasFocus) {
-        _regCtls[i].text = _formatValue(vals[i], _lastDataType);
-      }
-    }
-  }
-
-  void _clearRegCtls() {
-    for (final c in _regCtls) {
-      c.dispose();
-    }
-    for (final f in _regFocus) {
-      f.dispose();
-    }
-    _regCtls.clear();
-    _regFocus.clear();
-  }
-
-  String _formatValue(num v, ModbusDataType dt) =>
-      dt.isFloat ? v.toString() : v.toInt().toString();
-
-  /// 把 [num] 值按数据类型与字节序编码为字节，用于显示原始寄存器内容。
-  Uint8List _toBytes(num value, ModbusDataType dt, ByteOrder bo) {
-    final len = dt.isMultiRegister ? 4 : 2;
-    final bytes = Uint8List(len);
-    final bd = ByteData.sublistView(bytes);
-    switch (dt) {
-      case ModbusDataType.uint16:
-        bd.setUint16(0, value.toInt() & 0xFFFF, Endian.big);
-      case ModbusDataType.int16:
-        bd.setInt16(0, value.toInt(), Endian.big);
-      case ModbusDataType.uint32:
-        bd.setUint32(0, value.toInt(), Endian.big);
-      case ModbusDataType.int32:
-        bd.setInt32(0, value.toInt(), Endian.big);
-      case ModbusDataType.float32:
-        bd.setFloat32(0, value.toDouble(), Endian.big);
-    }
-    return _permute(bytes, bo);
-  }
-
-  /// 按字节序置换字节（库以 ABCD 大端为基准）。
-  Uint8List _permute(Uint8List b, ByteOrder bo) {
-    switch (bo) {
-      case ByteOrder.abcd:
-        return b;
-      case ByteOrder.dcba:
-        return Uint8List.fromList([b[3], b[2], b[1], b[0]]);
-      case ByteOrder.cdab:
-        return Uint8List.fromList([b[2], b[3], b[0], b[1]]);
-      case ByteOrder.badc:
-        return Uint8List.fromList([b[1], b[0], b[3], b[2]]);
-    }
-  }
-
-  String _rawWords(num value, ModbusDataType dt, ByteOrder bo) {
-    final bytes = _toBytes(value, dt, bo);
-    final words = <String>[];
-    for (var i = 0; i < bytes.length; i += 2) {
-      final w = (bytes[i] << 8) | bytes[i + 1];
-      words.add('0x${w.toRadixString(16).padLeft(4, '0').toUpperCase()}');
-    }
-    return words.join(' ');
-  }
-
-  String? _resultDetailText() {
-    if (_regValues != null) {
-      return _regValues!
-          .asMap()
-          .entries
-          .map((e) =>
-              '地址 ${_lastReadAddr + e.key * _lastDataType.registerCount}: '
-              '${_formatValue(e.value, _lastDataType)} (${_rawWords(e.value, _lastDataType, _lastByteOrder)})')
-          .join('\n');
-    }
-    if (_bitValues != null) {
-      return _bitValues!
-          .asMap()
-          .entries
-          .map((e) => '地址 ${_lastReadAddr + e.key}: ${e.value ? 1 : 0}')
-          .join('\n');
-    }
-    return _feedback;
-  }
-
-  String _summaryFor(HistoryOp op) {
-    final kind = _function.label;
-    if (op == HistoryOp.read) {
-      final typeLabel = _isRegisterRead ? '${_dataType.label} ' : '';
-      return '读取 $kind($typeLabel@$_addr, $_qty 项)';
-    }
-    return '写入 $kind @$_addr';
-  }
-
-  int get _addr => int.tryParse(_addrCtl.text) ?? 0;
-  int get _qty => int.tryParse(_qtyCtl.text) ?? 1;
-  int get _value => int.tryParse(_valueCtl.text) ?? 0;
-
-  bool get _isRead => _function.canRead;
-  bool get _isWrite => _function.canWrite;
-  bool get _isRegisterRead =>
-      _function == ModbusFunction.readHoldingRegisters ||
-      _function == ModbusFunction.readInputRegisters;
 
   @override
   Widget build(BuildContext context) {
-    final connected = _manager.state == DeviceConnectionState.connected;
     return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.session.name),
-        actions: [
-          IconButton(
-            icon: Icon(connected ? Icons.link_off : Icons.link),
-            tooltip: connected ? '断开' : '连接',
-            onPressed: _manager.state == DeviceConnectionState.connecting
-                ? null
-                : (connected ? _disconnect : _connect),
-          ),
-        ],
-      ),
+      appBar: AppBar(title: const Text('Modbus 调试')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          ConnectionPanel(manager: _manager, onConnectPressed: _connect),
+          _buildConnCard(),
           const SizedBox(height: 12),
-          _buildConnectionForm(),
-          const SizedBox(height: 12),
-          _buildOperationCard(),
+          _buildOpCard(),
           const SizedBox(height: 12),
           _buildResultCard(),
+          const SizedBox(height: 12),
+          _buildScanCard(),
+          const SizedBox(height: 12),
+          _buildLogCard(),
         ],
       ),
     );
   }
 
-  Widget _buildConnectionForm() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Form(
-          key: _formKey,
+  Widget _buildConnCard() => Card(
+        child: Padding(
+          padding: const EdgeInsets.all(14),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('连接配置',
-                  style: TextStyle(fontWeight: FontWeight.bold)),
+              const Text('连接', style: TextStyle(fontWeight: FontWeight.w600)),
               const SizedBox(height: 8),
               Row(
                 children: [
                   Expanded(
-                    flex: 3,
-                    child: TextFormField(
-                      controller: _hostCtl,
-                      decoration: const InputDecoration(
-                        labelText: 'IP 地址',
-                        hintText: '请输入设备 IP 地址',
-                      ),
+                    child: TextField(
+                      controller: _ipCtl,
+                      decoration: const InputDecoration(labelText: 'IP'),
                     ),
                   ),
                   const SizedBox(width: 8),
-                  Expanded(
-                    child: TextFormField(
+                  SizedBox(
+                    width: 90,
+                    child: TextField(
                       controller: _portCtl,
                       decoration: const InputDecoration(labelText: '端口'),
                       keyboardType: TextInputType.number,
                     ),
                   ),
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    width: 70,
+                    child: TextField(
+                      controller: _slaveCtl,
+                      decoration: const InputDecoration(labelText: '从站'),
+                      keyboardType: TextInputType.number,
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 8),
               Row(
                 children: [
-                  Expanded(
-                    child: TextFormField(
-                      controller: _unitCtl,
-                      decoration: const InputDecoration(labelText: '从站 ID'),
-                      keyboardType: TextInputType.number,
-                    ),
+                  ElevatedButton(
+                    onPressed: _connected ? null : _connect,
+                    child: const Text('连接'),
                   ),
                   const SizedBox(width: 8),
-                  Expanded(
-                    child: TextFormField(
-                      controller: _timeoutCtl,
-                      decoration: const InputDecoration(labelText: '超时(秒)'),
-                      keyboardType: TextInputType.number,
-                    ),
+                  OutlinedButton(
+                    onPressed: _connected ? _disconnect : null,
+                    child: const Text('断开'),
+                  ),
+                  const SizedBox(width: 12),
+                  Chip(
+                    label: Text(_connected ? '已连接' : '未连接'),
+                    backgroundColor:
+                        _connected ? Colors.green.shade100 : Colors.grey.shade200,
                   ),
                 ],
               ),
             ],
           ),
         ),
-      ),
-    );
-  }
+      );
 
-  Widget _buildOperationCard() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('读写操作',
-                style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            DropdownButtonFormField<ModbusFunction>(
-              initialValue: _function,
-              decoration: const InputDecoration(labelText: '功能'),
-              items: ModbusFunction.values
-                  .map((f) => DropdownMenuItem(value: f, child: Text(f.label)))
-                  .toList(),
-              onChanged: (v) => setState(() => _function = v!),
-            ),
-            if (_isRegisterRead) ...[
+  Widget _buildOpCard() => Card(
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('操作', style: TextStyle(fontWeight: FontWeight.w600)),
               const SizedBox(height: 8),
-              DropdownButtonFormField<ModbusDataType>(
-                initialValue: _dataType,
-                decoration: const InputDecoration(labelText: '数据类型'),
-                items: ModbusDataType.values
-                    .map((d) =>
-                        DropdownMenuItem(value: d, child: Text(d.label)))
+              DropdownButtonFormField<_ModbusFunc>(
+                value: _func,
+                items: _ModbusFunc.values
+                    .map((f) => DropdownMenuItem(value: f, child: Text(f.label)))
                     .toList(),
-                onChanged: (v) => setState(() => _dataType = v!),
+                onChanged: (v) => setState(() => _func = v!),
+                decoration: const InputDecoration(labelText: '功能码'),
               ),
-              if (_dataType.isMultiRegister)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: DropdownButtonFormField<ByteOrder>(
-                    initialValue: _byteOrder,
-                    decoration:
-                        const InputDecoration(labelText: '字节序'),
-                    items: ByteOrder.values
-                        .map((b) =>
-                            DropdownMenuItem(value: b, child: Text(b.label)))
-                        .toList(),
-                    onChanged: (v) => setState(() => _byteOrder = v!),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _addrCtl,
+                      decoration: const InputDecoration(labelText: '起始地址'),
+                      keyboardType: TextInputType.number,
+                    ),
                   ),
-                ),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('自动刷新（实时读取）'),
-                subtitle: const Text('每 2 秒轮询一次当前读取项'),
-                value: _autoRefresh,
-                onChanged: _toggleAutoRefresh,
-              ),
-            ],
-            const SizedBox(height: 8),
-            TextFormField(
-              controller: _addrCtl,
-              decoration: const InputDecoration(labelText: '起始地址'),
-              keyboardType: TextInputType.number,
-            ),
-            const SizedBox(height: 8),
-            if (_isRead)
-              TextFormField(
-                controller: _qtyCtl,
-                decoration: InputDecoration(
-                  labelText: '数量（值的个数）',
-                  hintText: _isRegisterRead && _dataType.isMultiRegister
-                      ? '每个值占 2 个寄存器'
-                      : '每个值占 1 个寄存器',
-                ),
-                keyboardType: TextInputType.number,
-              ),
-            if (_isWrite)
-              TextFormField(
-                controller: _valueCtl,
-                decoration: InputDecoration(
-                  labelText: _function == ModbusFunction.writeMultipleRegisters ||
-                          _function == ModbusFunction.writeMultipleCoils
-                      ? '值（多个用英文逗号分隔，线圈用 0/1）'
-                      : '值',
-                ),
-                keyboardType: TextInputType.text,
-              ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: _busy ||
-                        _manager.state != DeviceConnectionState.connected
-                    ? null
-                    : _execute,
-                icon: _busy
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.play_arrow),
-                label: Text(_isRead ? '读取' : '写入'),
-              ),
-            ),
-            if (_manager.state != DeviceConnectionState.connected)
-              const Padding(
-                padding: EdgeInsets.only(top: 6),
-                child: Text('请先连接设备',
-                    style: TextStyle(color: Colors.grey, fontSize: 12)),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildResultCard() {
-    final connected = _manager.state == DeviceConnectionState.connected;
-    final hasData = _regValues != null || _bitValues != null;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    _lastReadFunction != null
-                        ? '点位数据 · ${_lastReadFunction!.label}${_readRangeLabel()}'
-                        : '点位数据',
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 15),
-                  ),
-                ),
-                if (_lastReadTime != null)
-                  Text(_formatClock(_lastReadTime!),
-                      style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                if (connected)
-                  IconButton(
-                    onPressed: _busy ? null : () => _execute(log: false),
-                    icon: _busy
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.refresh, size: 18),
-                    tooltip: '刷新',
-                    visualDensity: VisualDensity.compact,
-                  ),
-              ],
-            ),
-            if (_autoRefresh && connected)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 8,
-                      height: 8,
-                      decoration: const BoxDecoration(
-                        color: Colors.green,
-                        shape: BoxShape.circle,
+                  if (_func.isRead) ...[
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextField(
+                        controller: _countCtl,
+                        decoration: const InputDecoration(labelText: '数量'),
+                        keyboardType: TextInputType.number,
                       ),
                     ),
-                    const SizedBox(width: 6),
-                    const Text('实时刷新中 · 每 2 秒',
-                        style: TextStyle(fontSize: 12, color: Colors.teal)),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 8),
+              if (!_func.isRead) ..._buildWriteFields(),
+              if (_func.isRead) ...[
+                Row(
+                  children: [
+                    Expanded(
+                      child: DropdownButtonFormField<ModbusDataType>(
+                        value: _dataType,
+                        items: ModbusDataType.values
+                            .map((t) =>
+                                DropdownMenuItem(value: t, child: Text(t.label)))
+                            .toList(),
+                        onChanged: (v) => setState(() => _dataType = v!),
+                        decoration:
+                            const InputDecoration(labelText: '数据类型'),
+                      ),
+                    ),
                   ],
                 ),
-              ),
-            const SizedBox(height: 8),
-            if (_error != null) ...[
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.red.shade50,
-                  borderRadius: BorderRadius.circular(6),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Expanded(
+                      child: SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('字交换', style: TextStyle(fontSize: 13)),
+                        value: _wordSwap,
+                        onChanged: (v) => setState(() => _wordSwap = v),
+                      ),
+                    ),
+                    Expanded(
+                      child: SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('字节交换', style: TextStyle(fontSize: 13)),
+                        value: _byteSwap,
+                        onChanged: (v) => setState(() => _byteSwap = v),
+                      ),
+                    ),
+                  ],
                 ),
-                child: Text(_error!,
-                    style: const TextStyle(color: Colors.red)),
+              ],
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  ElevatedButton(
+                    onPressed: _exec,
+                    child: const Text('执行'),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton(
+                    onPressed: _polling ? _stopPoll : _startPoll,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _polling ? Colors.orange : Colors.teal,
+                    ),
+                    child: Text(_polling ? '停止轮询' : '开始轮询'),
+                  ),
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    width: 90,
+                    child: TextField(
+                      controller: _pollIntervalCtl,
+                      decoration: const InputDecoration(labelText: '间隔(ms)'),
+                      keyboardType: TextInputType.number,
+                    ),
+                  ),
+                ],
+              ),
+              if (_history.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                const Text('实时趋势（首个解析值）',
+                    style: TextStyle(fontSize: 12, color: Colors.grey)),
+                const SizedBox(height: 4),
+                SizedBox(height: 80, child: _Sparkline(points: _history)),
+              ],
+            ],
+          ),
+        ),
+      );
+
+  List<Widget> _buildWriteFields() {
+    if (_func == _ModbusFunc.writeSingle) {
+      return [
+        TextField(
+          controller: _valueCtl,
+          decoration: const InputDecoration(labelText: '写入值 (0-65535)'),
+          keyboardType: TextInputType.number,
+        ),
+      ];
+    }
+    if (_func == _ModbusFunc.writeMultiple) {
+      return [
+        TextField(
+          controller: _valuesCtl,
+          decoration:
+              const InputDecoration(labelText: '寄存器值，逗号分隔 (如 0,1,2)'),
+        ),
+      ];
+    }
+    if (_func == _ModbusFunc.writeCoil) {
+      return [
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('线圈状态'),
+          value: _coilOn,
+          onChanged: (v) => setState(() => _coilOn = v),
+        ),
+      ];
+    }
+    if (_func == _ModbusFunc.writeCoils) {
+      return [
+        TextField(
+          controller: _statesCtl,
+          decoration:
+              const InputDecoration(labelText: '线圈状态，逗号分隔 (1/0 或 true/false)'),
+        ),
+      ];
+    }
+    return [];
+  }
+
+  Widget _buildResultCard() => Card(
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('解析结果', style: TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 8),
+              if (_results.isEmpty)
+                const Text('暂无数据', style: TextStyle(color: Colors.grey))
+              else
+                ..._results.map((r) => Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Text(r,
+                          style: const TextStyle(fontFamily: 'monospace')),
+                    )),
+            ],
+          ),
+        ),
+      );
+
+  Widget _buildScanCard() => Card(
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('网段扫描 Modbus 从站 (502)',
+                  style: TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _baseIpCtl,
+                      decoration:
+                          const InputDecoration(labelText: '网段前缀 (x.x.x)'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton(
+                    onPressed: _scanning ? null : _scan,
+                    child: Text(_scanning ? '扫描中…' : '扫描'),
+                  ),
+                ],
               ),
               const SizedBox(height: 8),
+              if (_scanResults.isEmpty)
+                const Text('未发现从站', style: TextStyle(color: Colors.grey))
+              else
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: _scanResults
+                      .map((ip) => ActionChip(
+                            label: Text(ip),
+                            onPressed: () {
+                              _ipCtl.text = ip;
+                              if (mounted) setState(() {});
+                            },
+                          ))
+                      .toList(),
+                ),
             ],
-            if (_feedback != null)
+          ),
+        ),
+      );
+
+  Widget _buildLogCard() => Card(
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Text('收发日志',
+                      style: TextStyle(fontWeight: FontWeight.w600)),
+                  const Spacer(),
+                  TextButton(
+                    onPressed: () async {
+                      await Clipboard.setData(
+                          ClipboardData(text: _log.join('\n')));
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('日志已复制到剪贴板')),
+                        );
+                      }
+                    },
+                    child: const Text('复制'),
+                  ),
+                  TextButton(
+                    onPressed: () => setState(() => _log.clear()),
+                    child: const Text('清空'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
               Container(
                 width: double.infinity,
+                height: 160,
                 padding: const EdgeInsets.all(8),
-                margin: const EdgeInsets.only(bottom: 8),
                 decoration: BoxDecoration(
-                  color: Colors.green.shade50,
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(_feedback!,
-                    style: const TextStyle(color: Colors.green)),
-              ),
-            if (!connected && !hasData && _feedback == null)
-              const Text('请先连接设备后读取点位',
-                  style: TextStyle(color: Colors.grey)),
-            if (hasData && _regValues != null) _buildRegisterRows(),
-            if (hasData && _bitValues != null) _buildBitGrid(),
-            if (connected && !hasData && _error == null && _feedback == null)
-              const Text('点击「读取」获取点位数据',
-                  style: TextStyle(color: Colors.grey)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// 寄存器读取结果：每行一个可编辑值与“写”按钮，下方显示原始寄存器内容。
-  Widget _buildRegisterRows() {
-    final canWrite = _lastIsHoldingRead;
-    return Column(
-      children: [
-        Container(
-          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
-          decoration: BoxDecoration(
-            color: Colors.teal.shade50,
-            borderRadius: BorderRadius.circular(6),
-          ),
-          child: Row(
-            children: [
-              const Expanded(
-                  flex: 2,
-                  child: Text('地址',
-                      style: TextStyle(fontWeight: FontWeight.w600))),
-              const Expanded(
-                  flex: 3,
-                  child: Text('值',
-                      style: TextStyle(fontWeight: FontWeight.w600))),
-              const SizedBox(width: 8),
-              if (canWrite)
-                const SizedBox(
-                    width: 40,
-                    child: Text('',
-                        style: TextStyle(fontWeight: FontWeight.w600))),
-            ],
-          ),
-        ),
-        const SizedBox(height: 4),
-        ..._regValues!.asMap().entries.map((e) {
-          final index = e.key;
-          final addr = _lastReadAddr + index * _lastDataType.registerCount;
-          final v = e.value;
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Row(
-              children: [
-                Expanded(
-                  flex: 2,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('$addr',
-                          style: const TextStyle(
-                              fontFamily: 'monospace', fontSize: 13)),
-                      Text(
-                        _rawWords(v, _lastDataType, _lastByteOrder),
-                        style: const TextStyle(
-                            fontSize: 11,
-                            color: Colors.grey,
-                            fontFamily: 'monospace'),
-                      ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  flex: 3,
-                  child: TextField(
-                    controller: _regCtls[index],
-                    focusNode: _regFocus[index],
-                    keyboardType: _lastDataType.isFloat
-                        ? const TextInputType.numberWithOptions(decimal: true)
-                        : TextInputType.number,
-                    decoration: InputDecoration(
-                      isDense: true,
-                      border: const OutlineInputBorder(),
-                      hintText: _lastDataType.label,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                if (canWrite)
-                  SizedBox(
-                    width: 40,
-                    child: IconButton(
-                      onPressed: _busy ? null : () => _writeRegisterAt(index),
-                      icon: const Icon(Icons.save_outlined, size: 18),
-                      tooltip: '写回',
-                      visualDensity: VisualDensity.compact,
-                      color: Colors.teal,
-                    ),
-                  ),
-              ],
-            ),
-          );
-        }),
-        if (!canWrite)
-          const Padding(
-            padding: EdgeInsets.only(top: 6),
-            child: Text('输入寄存器为只读，不支持写回。',
-                style: TextStyle(color: Colors.grey, fontSize: 12)),
-          ),
-      ],
-    );
-  }
-
-  /// 线圈 / 离散输入读取结果：彩色 ON/OFF 卡片；线圈可点击切换并写回。
-  Widget _buildBitGrid() {
-    final rows = _bitValues!;
-    final writable = _lastReadFunction == ModbusFunction.readCoils;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: rows.asMap().entries.map((e) {
-            final addr = _lastReadAddr + e.key;
-            final on = e.value;
-            return InkWell(
-              onTap: writable ? () => _toggleBit(e.key) : null,
-              borderRadius: BorderRadius.circular(8),
-              child: Container(
-                width: 92,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                decoration: BoxDecoration(
-                  color: on ? Colors.green.shade50 : Colors.grey.shade100,
-                  border: Border.all(
-                    color: on ? Colors.green : Colors.grey.shade300,
-                  ),
+                  color: Colors.black87,
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('$addr',
-                        style: const TextStyle(
-                            fontSize: 12, color: Colors.grey)),
-                    const SizedBox(height: 2),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          on ? Icons.check_circle : Icons.circle_outlined,
-                          size: 16,
-                          color: on ? Colors.green : Colors.grey,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          on ? 'ON' : 'OFF',
-                          style: TextStyle(
-                            color: on ? Colors.green : Colors.grey,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
+                child: ListView(
+                  children: _log
+                      .map((l) => Text(
+                            l,
+                            style: const TextStyle(
+                              color: Colors.greenAccent,
+                              fontFamily: 'monospace',
+                              fontSize: 11,
+                            ),
+                          ))
+                      .toList(),
                 ),
               ),
-            );
-          }).toList(),
-        ),
-        if (writable)
-          const Padding(
-            padding: EdgeInsets.only(top: 6),
-            child: Text('点击卡片即可切换 ON/OFF 并写回设备。',
-                style: TextStyle(color: Colors.grey, fontSize: 12)),
+            ],
           ),
-      ],
-    );
-  }
+        ),
+      );
+}
 
-  String _readRangeLabel() {
-    final n = _regValues?.length ?? _bitValues?.length ?? 0;
-    if (n == 0) return '';
-    final start = _lastReadAddr;
-    final end = _lastReadAddr + (n - 1) * (_regValues != null ? _lastDataType.registerCount : 1);
-    return ' · $start–$end';
-  }
-
-  String _formatClock(DateTime t) =>
-      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}:${t.second.toString().padLeft(2, '0')}';
+/// 轻量趋势迷你曲线（实时数据可视化占位，模块九 会扩展为完整趋势图）。
+class _Sparkline extends StatelessWidget {
+  final List<double> points;
+  const _Sparkline({required this.points});
 
   @override
-  void dispose() {
-    _refreshTimer?.cancel();
-    _manager.removeListener(_onManagerChanged);
-    _clearRegCtls();
-    _hostCtl.dispose();
-    _portCtl.dispose();
-    _unitCtl.dispose();
-    _timeoutCtl.dispose();
-    _addrCtl.dispose();
-    _qtyCtl.dispose();
-    _valueCtl.dispose();
-    super.dispose();
+  Widget build(BuildContext context) {
+    if (points.isEmpty) {
+      return const Center(child: Text('无数据', style: TextStyle(color: Colors.grey)));
+    }
+    return CustomPaint(
+      size: const Size(double.infinity, 80),
+      painter: _SparklinePainter(points),
+    );
   }
+}
+
+class _SparklinePainter extends CustomPainter {
+  final List<double> points;
+  _SparklinePainter(this.points);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final min = points.reduce((a, b) => a < b ? a : b);
+    final max = points.reduce((a, b) => a > b ? a : b);
+    final range = (max - min) == 0 ? 1.0 : (max - min);
+    final dx = size.width / (points.length - 1).clamp(1, 10000);
+    final paint = Paint()
+      ..color = Colors.teal
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke;
+    final path = Path();
+    for (var i = 0; i < points.length; i++) {
+      final x = i * dx;
+      final y = size.height - ((points[i] - min) / range) * size.height;
+      if (i == 0) {
+        path.moveTo(x, y);
+      } else {
+        path.lineTo(x, y);
+      }
+    }
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter old) => true;
 }

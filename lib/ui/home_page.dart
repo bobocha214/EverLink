@@ -236,6 +236,31 @@ class _HomePageState extends State<HomePage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('EverLink 设备调试'),
+        actions: [
+          Stack(
+            alignment: Alignment.center,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.filter_list),
+                tooltip: '筛选',
+                onPressed: _showFilterSheet,
+              ),
+              if (_hasFilter)
+                Positioned(
+                  top: 10,
+                  right: 10,
+                  child: Container(
+                    width: 8,
+                    height: 8,
+                    decoration: const BoxDecoration(
+                      color: Colors.red,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _addDevice,
@@ -246,8 +271,6 @@ class _HomePageState extends State<HomePage> {
         padding: const EdgeInsets.all(16),
         children: [
           _buildStatRow(mgr),
-          const SizedBox(height: 12),
-          _buildFilterBar(),
           const SizedBox(height: 12),
           if (mgr.sessions.isEmpty)
             _buildEmpty()
@@ -266,19 +289,51 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  /// 设备筛选条：名称搜索 + 协议类型 + 连接状态。
-  Widget _buildFilterBar() {
+  /// 是否有任意筛选条件生效（用于在筛选按钮上显示小红点）。
+  bool get _hasFilter =>
+      _typeFilter != null ||
+      _statusFilter != null ||
+      _deviceFilter != null ||
+      _nameQuery.isNotEmpty;
+
+  /// 打开右上角筛选面板：以底部弹层承载筛选内容，点击调整即时生效。
+  void _showFilterSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModal) => Padding(
+          padding: EdgeInsets.only(
+            left: 16,
+            right: 16,
+            top: 16,
+            bottom: 16 + MediaQuery.of(ctx).viewInsets.bottom,
+          ),
+          child: SingleChildScrollView(
+            child: _buildFilterContent((fn) {
+              setState(fn);
+              setModal(fn);
+            }),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 设备筛选内容（可在底部弹层中复用）。[update] 同时刷新本页与弹层，
+  /// 使 Chip / 下拉的选中态即时反馈，而设备列表随本页 setState 实时变化。
+  Widget _buildFilterContent(void Function(void Function()) update) {
     final typeChips = <Widget>[
       _FilterChip(
         label: '全部',
         selected: _typeFilter == null,
-        onSelected: () => setState(() => _typeFilter = null),
+        onSelected: () => update(() => _typeFilter = null),
       ),
       for (final d in SettingsService.instance.enabledDescriptors)
         _FilterChip(
           label: d.name,
           selected: _typeFilter == d.type,
-          onSelected: () => setState(
+          onSelected: () => update(
             () => _typeFilter = _typeFilter == d.type ? null : d.type,
           ),
         ),
@@ -287,12 +342,12 @@ class _HomePageState extends State<HomePage> {
       _FilterChip(
         label: '全部状态',
         selected: _statusFilter == null,
-        onSelected: () => setState(() => _statusFilter = null),
+        onSelected: () => update(() => _statusFilter = null),
       ),
       _FilterChip(
         label: '在线',
         selected: _statusFilter == DeviceConnectionState.connected,
-        onSelected: () => setState(() => _statusFilter =
+        onSelected: () => update(() => _statusFilter =
             _statusFilter == DeviceConnectionState.connected
                 ? null
                 : DeviceConnectionState.connected),
@@ -300,7 +355,7 @@ class _HomePageState extends State<HomePage> {
       _FilterChip(
         label: '离线',
         selected: _statusFilter == DeviceConnectionState.disconnected,
-        onSelected: () => setState(() => _statusFilter =
+        onSelected: () => update(() => _statusFilter =
             _statusFilter == DeviceConnectionState.disconnected
                 ? null
                 : DeviceConnectionState.disconnected),
@@ -308,52 +363,51 @@ class _HomePageState extends State<HomePage> {
       _FilterChip(
         label: '异常',
         selected: _statusFilter == DeviceConnectionState.error,
-        onSelected: () => setState(() => _statusFilter =
+        onSelected: () => update(() => _statusFilter =
             _statusFilter == DeviceConnectionState.error
                 ? null
                 : DeviceConnectionState.error),
       ),
     ];
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            TextField(
-              decoration: InputDecoration(
-                isDense: true,
-                prefixIcon: const Icon(Icons.search, size: 20),
-                hintText: '按设备名称搜索',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                contentPadding: const EdgeInsets.symmetric(vertical: 8),
-              ),
-              onChanged: (v) => setState(() => _nameQuery = v),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('筛选设备',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        const SizedBox(height: 12),
+        TextField(
+          decoration: InputDecoration(
+            isDense: true,
+            prefixIcon: const Icon(Icons.search, size: 20),
+            hintText: '按设备名称搜索',
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
             ),
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: typeChips,
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: statusChips,
-            ),
-            const SizedBox(height: 8),
-            _buildDeviceDropdown(),
-          ],
+            contentPadding: const EdgeInsets.symmetric(vertical: 8),
+          ),
+          onChanged: (v) => update(() => _nameQuery = v),
         ),
-      ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: typeChips,
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: statusChips,
+        ),
+        const SizedBox(height: 8),
+        _buildDeviceDropdown(update),
+      ],
     );
   }
 
   /// 首页设备下拉框：按设备名过滤列表（设备多时比一排 Chip 更省空间）。
-  Widget _buildDeviceDropdown() {
+  Widget _buildDeviceDropdown(void Function(void Function()) update) {
     final deviceNames = SessionManager.instance.sessions
         .map((s) => s.name)
         .where((n) => n.isNotEmpty)
@@ -388,7 +442,7 @@ class _HomePageState extends State<HomePage> {
                 child: Text(d),
               ),
           ],
-          onChanged: (v) => setState(() => _deviceFilter = v),
+          onChanged: (v) => update(() => _deviceFilter = v),
         ),
       ),
     );

@@ -29,6 +29,14 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        // Flutter Gradle 插件在编译时注入此占位符，显式声明让 Android Studio Lint 不报红
+        manifestPlaceholders["applicationName"] = "android.app.Application"
+    }
+
+    sourceSets {
+        getByName("main") {
+            kotlin.srcDirs("src/main/kotlin")
+        }
     }
 
     signingConfigs {

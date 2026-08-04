@@ -66,5 +66,13 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<!-- network_info_plus: 获取 WiFi SSID / BSSID 需要定位权限 -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>需要获取位置以读取当前 WiFi 名称和网络信息，不会追踪你的位置</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>需要获取位置以读取当前 WiFi 名称和网络信息，不会追踪你的位置</string>
+	<!-- iOS 14+ 获取 SSID 需要本地网络权限 -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>EverLink 需要本地网络权限以发现同一局域网内的设备</string>
 </dict>
 </plist>
