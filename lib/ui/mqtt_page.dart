@@ -259,7 +259,35 @@ class _MqttPageState extends State<MqttPage> {
   }
 
   int _countFor(String topic) =>
-      _messages.where((m) => m.topic == topic).length;
+      _messages.where((m) => _topicMatches(topic, m.topic)).length;
+
+  /// 判断消息主题 [topic] 是否匹配订阅 [pattern]（支持 MQTT 通配符 # 与 +）。
+  /// - `#` 只能作为最后一段，匹配父层级及所有子层级（如 `test/#` 匹配 `test`、`test/abc`）。
+  /// - `+` 匹配单层级任意值（如 `test/+/x` 匹配 `test/abc/x`）。
+  /// - 无通配符则为精确相等。
+  bool _topicMatches(String pattern, String topic) {
+    if (pattern == '#') return true;
+    if (pattern == topic) return true;
+    final pLevels = pattern.split('/');
+    final tLevels = topic.split('/');
+    // # 必须出现在末尾：去掉末尾 # 后，前面层级需逐段匹配（+ 通配单层）。
+    if (pLevels.last == '#') {
+      final head = pLevels.sublist(0, pLevels.length - 1);
+      if (head.length > tLevels.length) return false;
+      for (var i = 0; i < head.length; i++) {
+        final h = head[i];
+        if (h != '+' && h != tLevels[i]) return false;
+      }
+      return true;
+    }
+    if (pLevels.length != tLevels.length) return false;
+    for (var i = 0; i < pLevels.length; i++) {
+      final p = pLevels[i];
+      if (p == '+') continue;
+      if (p != tLevels[i]) return false;
+    }
+    return true;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -432,28 +460,37 @@ class _MqttPageState extends State<MqttPage> {
             ),
             const SizedBox(height: 8),
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
                   child: TextFormField(
                     controller: _subTopicCtl,
                     decoration: const InputDecoration(
-                      labelText: '主题（支持逗号分隔多个 / # + 通配符）',
+                      labelText: '主题（支持 # + 通配符，多主题逗号分隔）',
                     ),
                   ),
                 ),
                 const SizedBox(width: 8),
+                FilledButton.icon(
+                  onPressed: connected ? _subscribe : null,
+                  icon: const Icon(Icons.add),
+                  label: const Text('订阅'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Text('QoS',
+                    style: TextStyle(fontSize: 13, color: Colors.grey)),
+                const SizedBox(width: 6),
                 DropdownButton<MqttQosLevel>(
                   value: _subQos,
                   items: MqttQosLevel.values
-                      .map((q) => DropdownMenuItem(value: q, child: Text(q.label)))
+                      .map((q) =>
+                          DropdownMenuItem(value: q, child: Text(q.label)))
                       .toList(),
                   onChanged: (v) => setState(() => _subQos = v!),
-                ),
-                const SizedBox(width: 8),
-                IconButton(
-                  onPressed: connected ? _subscribe : null,
-                  icon: const Icon(Icons.add),
-                  tooltip: '订阅',
                 ),
               ],
             ),
@@ -520,13 +557,16 @@ class _MqttPageState extends State<MqttPage> {
                     const Text('保留'),
                   ],
                 ),
-                const Spacer(),
-                FilledButton.icon(
-                  onPressed: connected ? _publish : null,
-                  icon: const Icon(Icons.send),
-                  label: const Text('发布'),
-                ),
               ],
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: connected ? _publish : null,
+                icon: const Icon(Icons.send),
+                label: const Text('发布'),
+              ),
             ),
           ],
         ),
@@ -535,13 +575,18 @@ class _MqttPageState extends State<MqttPage> {
   }
 
   Widget _buildMessagesCard() {
-    // 按主题分组，每组以可展开的区块呈现，实现“按 topic 分类”。
+    // 按主题分组；消息优先归属到“第一个匹配的订阅主题”（支持 #/+ 通配符），
+    // 若不匹配任何订阅则按真实主题分组。实现“按 topic 分类”且通配订阅可用。
     final Map<String, List<MqttMessageRecord>> groups = {};
     for (final m in _messages) {
-      (groups[m.topic] ??= []).add(m);
+      final key = _subscribedTopics.firstWhere(
+        (s) => _topicMatches(s, m.topic),
+        orElse: () => m.topic,
+      );
+      (groups[key] ??= []).add(m);
     }
     final topics = groups.keys
-        .where((t) => _subFilter == null || t == _subFilter)
+        .where((t) => _subFilter == null || _topicMatches(_subFilter!, t))
         .toList();
 
     return Card(

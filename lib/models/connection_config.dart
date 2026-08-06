@@ -1,5 +1,6 @@
 import 'package:modbus_client/modbus_client.dart';
 
+import 'package:everlink/models/opcua_models.dart';
 import 'package:everlink/models/protocol_type.dart';
 
 /// 连接配置基类。
@@ -311,30 +312,57 @@ class OpcUaConnectionConfig extends ConnectionConfig {
   /// 安全策略：当前仅支持 'None'。
   final String securityPolicy;
 
-  /// 用户名（预留，MVP 未启用）。
+  /// 认证方式（匿名 / 用户名密码 / X.509 证书）。
+  ///
+  /// 底层 `mcp_io_opcua 0.2.1` 仅完整实现匿名；用户名 / 证书方式可录入并
+  /// 持久化，但连接时会被协议层以明确的 [UnsupportedError] 拒绝（能力降级）。
+  final OpcUaAuthMode authMode;
+
+  /// 用户名（用于 [OpcUaAuthMode.userName]，预留）。
   final String? username;
 
-  /// 密码（预留，MVP 未启用）。
+  /// 密码（用于 [OpcUaAuthMode.userName]，预留）。
   final String? password;
+
+  /// 客户端证书 PEM（用于 [OpcUaAuthMode.certificate]，预留）。
+  final String? clientCert;
+
+  /// 客户端私钥 PEM（用于 [OpcUaAuthMode.certificate]，预留）。
+  final String? clientKey;
+
+  /// 私钥口令（用于 [OpcUaAuthMode.certificate]，可选）。
+  final String? clientKeyPassword;
 
   const OpcUaConnectionConfig({
     this.endpoint = 'opc.tcp://localhost:4840',
     this.securityPolicy = 'None',
+    this.authMode = OpcUaAuthMode.anonymous,
     this.username,
     this.password,
+    this.clientCert,
+    this.clientKey,
+    this.clientKeyPassword,
   });
 
   OpcUaConnectionConfig copyWith({
     String? endpoint,
     String? securityPolicy,
+    OpcUaAuthMode? authMode,
     String? username,
     String? password,
+    String? clientCert,
+    String? clientKey,
+    String? clientKeyPassword,
   }) {
     return OpcUaConnectionConfig(
       endpoint: endpoint ?? this.endpoint,
       securityPolicy: securityPolicy ?? this.securityPolicy,
+      authMode: authMode ?? this.authMode,
       username: username ?? this.username,
       password: password ?? this.password,
+      clientCert: clientCert ?? this.clientCert,
+      clientKey: clientKey ?? this.clientKey,
+      clientKeyPassword: clientKeyPassword ?? this.clientKeyPassword,
     );
   }
 
@@ -342,16 +370,24 @@ class OpcUaConnectionConfig extends ConnectionConfig {
   Map<String, dynamic> toJson() => {
         'endpoint': endpoint,
         'securityPolicy': securityPolicy,
+        'authMode': authMode.id,
         'username': username,
         'password': password,
+        'clientCert': clientCert,
+        'clientKey': clientKey,
+        'clientKeyPassword': clientKeyPassword,
       };
 
   factory OpcUaConnectionConfig.fromJson(Map<String, dynamic> j) =>
       OpcUaConnectionConfig(
         endpoint: j['endpoint'] as String,
         securityPolicy: j['securityPolicy'] as String? ?? 'None',
+        authMode: OpcUaAuthMode.fromId(j['authMode'] as String?),
         username: j['username'] as String?,
         password: j['password'] as String?,
+        clientCert: j['clientCert'] as String?,
+        clientKey: j['clientKey'] as String?,
+        clientKeyPassword: j['clientKeyPassword'] as String?,
       );
 
   @override

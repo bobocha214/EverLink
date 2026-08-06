@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:everlink/services/clipboard_history/clipboard_history_manager.dart';
 import 'package:everlink/services/history_service.dart';
 import 'package:everlink/services/ping_history_service.dart';
 import 'package:everlink/services/session_manager.dart';
@@ -12,6 +13,9 @@ void main() async {
   await HistoryService.instance.init();
   await PingHistoryService.instance.init();
   await SettingsService.instance.init();
+  // 启动本地剪贴板历史监听：记录本应用内复制，并在 EverLink 处于前台时记录系统剪贴板变化。
+  // 注：Android 10+ 禁止后台应用读取剪贴板，故其它 App 的复制仅在 EverLink 前台时才会被捕获。
+  await ClipboardHistoryManager.instance.init();
   runApp(const EverlinkApp());
 }
 

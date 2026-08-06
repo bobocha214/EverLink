@@ -47,6 +47,7 @@ dependencies:
   qr_flutter: ^4.1.0
   saver_gallery: ^5.1.0
   network_info_plus: ^7.0.0
+  clipboard_watcher: ^0.3.0
 dev_dependencies:
   flutter_test:
     sdk: flutter
