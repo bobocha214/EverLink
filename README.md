@@ -125,4 +125,9 @@ flutter build ios        # iOS（需在 macOS 执行）
 
 ## 📄 许可证
 
-本项目当前为私有项目（`publish_to: 'none'`），未开放对外发布。具体授权以实际发布说明为准。
+本项目采用 **MIT License** 开源授权。
+
+- 版权所有 © 2026 niangao
+- 完整条款见仓库根目录的 [`LICENSE`](LICENSE) 文件。
+
+> 说明：`pubspec.yaml` 中的 `publish_to: 'none'` 仅用于阻止 `flutter pub publish` 误传到 pub.dev，不影响本仓库以 MIT 协议开源。

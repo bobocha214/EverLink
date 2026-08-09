@@ -12,6 +12,9 @@
 .swiftpm/
 migrate_working_dir/
 
+# WorkBuddy project data (local memory / skills / runtime state)
+.workbuddy/
+
 # IntelliJ related
 *.iml
 *.ipr
