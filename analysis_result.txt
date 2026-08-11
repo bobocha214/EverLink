@@ -1,0 +1,5 @@
+Analyzing lib...
+
+   info - protocols\opcua_protocol.dart:43:21 - Unnecessary use of multiple underscores. Try using '_'. - unnecessary_underscores
+
+1 issue found.
