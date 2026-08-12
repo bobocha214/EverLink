@@ -1,11 +1,12 @@
 name: Build Release APK
 
-# 推送形如 v1.0.0 的 tag 时，自动构建签名 Release APK 并发布到 GitHub Release。
+# 推送任意 tag（如 v1.0.0 / 1.0.0 / 1.1.0）时，自动构建签名 Release APK 并发布到 GitHub Release。
 # 更新检查（UpdateService）会从该 Release 读取版本与 APK 下载地址。
+# 注意：tag 名称需与 pubspec.yaml 的 version 字段一致（如代码是 1.1.0，则打 tag 1.1.0 或 v1.1.0）。
 on:
   push:
     tags:
-      - 'v*'
+      - '*'
 
 permissions:
   contents: write   # 允许 action-gh-release 创建/更新 Release
