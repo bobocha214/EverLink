@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:everlink/services/lan_transfer/lan_models.dart';
 import 'package:everlink/services/lan_transfer/lan_transfer_manager.dart';
 import 'package:everlink/ui/lan_chat_page.dart';
+import 'package:everlink/utils/app_routes.dart';
 
 /// 快传管理页：频道与设备的列表入口。
 ///
@@ -727,11 +728,7 @@ class _LanTransferPageState extends State<LanTransferPage> {
   // ----------------------------------------------------------- 导航
 
   void _enterChat(ChatTarget target) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => LanChatPage(target: target),
-      ),
-    );
+    AppRoutes.push(context, LanChatPage(target: target));
   }
 
   // ----------------------------------------------------------- 交互

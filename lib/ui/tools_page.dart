@@ -5,6 +5,7 @@ import 'package:everlink/ui/clipboard_manager_page.dart';
 import 'package:everlink/ui/lan_transfer_page.dart';
 import 'package:everlink/ui/network_debug_page.dart';
 import 'package:everlink/ui/ping_page.dart';
+import 'package:everlink/utils/app_routes.dart';
 
 /// 工具聚合页：承载快传、网络诊断等独立工具入口。
 class ToolsPage extends StatelessWidget {
@@ -22,9 +23,7 @@ class ToolsPage extends StatelessWidget {
             color: Colors.teal,
             title: '快传',
             subtitle: '同一 WiFi 下，通过网页/扫码互传文件、文字、图片',
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const LanTransferPage()),
-            ),
+            onTap: () => AppRoutes.push(context, const LanTransferPage()),
           ),
           const SizedBox(height: 12),
           _ToolCard(
@@ -32,9 +31,7 @@ class ToolsPage extends StatelessWidget {
             color: Colors.deepOrange,
             title: '剪贴板管理',
             subtitle: '本地记录本机所有复制内容（含其它 App），可查看与复制',
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const ClipboardManagerPage()),
-            ),
+            onTap: () => AppRoutes.push(context, const ClipboardManagerPage()),
           ),
           const SizedBox(height: 12),
           _ToolCard(
@@ -42,9 +39,7 @@ class ToolsPage extends StatelessWidget {
             color: Colors.blue,
             title: '网络诊断',
             subtitle: '对目标主机执行 ICMP Ping，查看时延与丢包率',
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const PingPage()),
-            ),
+            onTap: () => AppRoutes.push(context, const PingPage()),
           ),
           const SizedBox(height: 12),
           _ToolCard(
@@ -52,9 +47,7 @@ class ToolsPage extends StatelessWidget {
             color: Colors.purple,
             title: '网络调试',
             subtitle: 'TCP 客户端、端口扫描、目标探测、局域网扫描、IP 子网计算',
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const NetworkDebugPage()),
-            ),
+            onTap: () => AppRoutes.push(context, const NetworkDebugPage()),
           ),
           const SizedBox(height: 12),
           _ToolCard(
@@ -62,9 +55,7 @@ class ToolsPage extends StatelessWidget {
             color: Colors.cyan,
             title: '进制工具',
             subtitle: '二/八/十/十六进制互转、补码、字节视图、文本⇄Hex、CRC16',
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const BaseToolPage()),
-            ),
+            onTap: () => AppRoutes.push(context, const BaseToolPage()),
           ),
         ],
       ),
@@ -89,12 +80,10 @@ class _ToolCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      elevation: 1,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(14),
-        onTap: onTap,
+      return Card(
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Row(
@@ -119,11 +108,12 @@ class _ToolCard extends StatelessWidget {
                     const SizedBox(height: 4),
                     Text(subtitle,
                         style:
-                            const TextStyle(fontSize: 13, color: Colors.grey)),
+                            TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant)),
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right, color: Colors.grey),
+              Icon(Icons.chevron_right,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant),
             ],
           ),
         ),

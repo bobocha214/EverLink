@@ -4,6 +4,7 @@ import 'package:everlink/models/protocol_type.dart';
 import 'package:everlink/services/history_service.dart';
 import 'package:everlink/services/settings_service.dart';
 import 'package:everlink/ui/history_detail_page.dart';
+import 'package:everlink/utils/app_routes.dart';
 
 /// 操作类别，用于历史筛选。
 enum _HistCat {
@@ -415,11 +416,7 @@ class _HistoryPageState extends State<HistoryPage> {
               ],
             ),
             isThreeLine: hasDetail || hasError,
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => HistoryDetailPage(record: r),
-              ),
-            ),
+            onTap: () => AppRoutes.push(context, HistoryDetailPage(record: r)),
           ),
         );
       },

@@ -6,72 +6,100 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'package:everlink/services/network_info_service.dart';
+import 'package:everlink/utils/app_routes.dart';
 
 /// 通用网络调试客户端工具页。
 ///
-/// 设计文档模块四的落地，分为三个 Tab：
+/// 设计文档模块四的落地，包含五个独立功能：
 /// - **TCP 客户端**：建立原始 TCP 连接，收发字节流并以 hex dump 形式记录
 ///   （对应 4.1 HTTP/TCP 调试中的 TCP 部分 + 4.5 收发日志视图）。
 /// - **端口扫描**：对目标 IP 并发 TCP `connect` 探测常见/自定义端口（4.2）。
-/// - **Traceroute**：基于 [RawSocket] + [SocketOption.ipTtl] 的逐跳探测。
-///   注意 Android 平台无法读取 ICMP 响应源地址，故只能粗略判断“目标是否在
-///   第 N 跳内可达”，无法列出中间路由 IP——结果仅供参考（4.3 边界）。
+/// - **目标探测**：对目标做多次 TCP 连通性探测并统计 RTT（类似 TCP Ping）。
+/// - **局域网扫描**：对指定网段某端口做 TCP 探测，发现同网段内提供服务的主机。
+/// - **IP 计算**：根据 IP 与子网掩码计算网络地址、可用范围等。
 ///
 /// HTTP 调试与网络信息面板已有独立页面（http_page / network_info_page），
 /// 此处不再重复实现。
-class NetworkDebugPage extends StatefulWidget {
+class NetworkDebugPage extends StatelessWidget {
   const NetworkDebugPage({super.key});
 
   @override
-  State<NetworkDebugPage> createState() => _NetworkDebugPageState();
-}
-
-class _NetworkDebugPageState extends State<NetworkDebugPage>
-    with SingleTickerProviderStateMixin {
-  late final TabController _tab;
-
-  @override
-  void initState() {
-    super.initState();
-    _tab = TabController(length: 5, vsync: this);
-  }
-
-  @override
-  void dispose() {
-    _tab.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('网络调试'),
-        bottom: TabBar(
-          controller: _tab,
-          isScrollable: true,
-          tabs: const [
-            Tab(icon: Icon(Icons.cable), text: 'TCP 客户端'),
-            Tab(icon: Icon(Icons.scanner), text: '端口扫描'),
-            Tab(icon: Icon(Icons.route), text: '目标探测'),
-            Tab(icon: Icon(Icons.lan_outlined), text: '局域网扫描'),
-            Tab(icon: Icon(Icons.calculate_outlined), text: 'IP 计算'),
-          ],
-        ),
-      ),
-      body: TabBarView(
-        controller: _tab,
-        children: const [
-          _TcpClientTab(),
-          _PortScanTab(),
-          _TracerouteTab(),
-          _LanScanTab(),
-          _IpCalcTab(),
-        ],
+      appBar: AppBar(title: const Text('网络调试')),
+      body: ListView.separated(
+        padding: const EdgeInsets.all(16),
+        itemCount: _netFuncs.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 12),
+        itemBuilder: (context, i) {
+          final f = _netFuncs[i];
+          return Card(
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: () => AppRoutes.push(context, f.page),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: scheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(f.icon, color: scheme.primary, size: 24),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(f.label,
+                              style: const TextStyle(
+                                  fontSize: 16, fontWeight: FontWeight.w600)),
+                          const SizedBox(height: 4),
+                          Text(f.desc,
+                              style: TextStyle(
+                                  fontSize: 13, color: scheme.onSurfaceVariant)),
+                        ],
+                      ),
+                    ),
+                    Icon(Icons.chevron_right,
+                        color: scheme.onSurfaceVariant),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
 }
+
+/// 网络调试的五个功能入口（目录页使用）。
+class _NetFunc {
+  const _NetFunc(this.icon, this.label, this.desc, this.page);
+  final IconData icon;
+  final String label;
+  final String desc;
+  final Widget page;
+}
+
+const List<_NetFunc> _netFuncs = [
+  _NetFunc(Icons.cable, 'TCP 客户端',
+      '建立原始 TCP 连接，收发字节流并以 hex dump 记录', TcpClientPage()),
+  _NetFunc(Icons.scanner, '端口扫描',
+      '并发探测目标主机的常见 / 自定义端口是否开放', PortScanPage()),
+  _NetFunc(Icons.route, '目标探测',
+      '对目标做多次 TCP 连通性探测并统计往返时延（RTT）', TargetProbePage()),
+  _NetFunc(Icons.lan_outlined, '局域网扫描',
+      '发现同网段内开放指定端口的局域网设备', LanScanPage()),
+  _NetFunc(Icons.calculate_outlined, 'IP 计算',
+      '根据 IP 与子网掩码计算网络地址、可用范围等', IpCalcPage()),
+];
 
 /// 单条收发日志。
 class _LogEntry {
@@ -104,15 +132,15 @@ String hexDump(Uint8List bytes, {int bytesPerLine = 16}) {
   return buf.toString();
 }
 
-/// Tab 1：原始 TCP 客户端 + 收发日志。
-class _TcpClientTab extends StatefulWidget {
-  const _TcpClientTab();
+/// TCP 客户端：原始 TCP 连接 + 收发日志。
+class TcpClientPage extends StatefulWidget {
+  const TcpClientPage({super.key});
 
   @override
-  State<_TcpClientTab> createState() => _TcpClientTabState();
+  State<TcpClientPage> createState() => _TcpClientPageState();
 }
 
-class _TcpClientTabState extends State<_TcpClientTab> {
+class _TcpClientPageState extends State<TcpClientPage> {
   final _hostCtl = TextEditingController();
   final _portCtl = TextEditingController(text: '502');
   final _sendCtl = TextEditingController();
@@ -237,208 +265,211 @@ class _TcpClientTabState extends State<_TcpClientTab> {
   @override
   Widget build(BuildContext context) {
     final color = _connected ? Colors.green : Colors.grey;
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _hostCtl,
-                        decoration: const InputDecoration(
-                          labelText: '主机',
-                          hintText: 'IP 或域名',
-                          isDense: true,
-                        ),
-                        enabled: !_connected,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    SizedBox(
-                      width: 100,
-                      child: TextField(
-                        controller: _portCtl,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
-                          labelText: '端口',
-                          isDense: true,
-                        ),
-                        enabled: !_connected,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Icon(Icons.circle, size: 10, color: color),
-                    const SizedBox(width: 6),
-                    Text(_connected ? '已连接' : '未连接',
-                        style: TextStyle(color: color, fontSize: 13)),
-                    const Spacer(),
-                    FilledButton.icon(
-                      onPressed: _busy ? null : _toggle,
-                      icon: _busy
-                          ? const SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(
-                                  strokeWidth: 2, color: Colors.white),
-                            )
-                          : Icon(_connected ? Icons.link_off : Icons.link),
-                      label: Text(_connected ? '断开' : '连接'),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _sendCtl,
-                        enabled: _connected,
-                        decoration: InputDecoration(
-                          labelText: '发送内容',
-                          hintText: _hexMode ? '十六进制，如 01 03 00 00 00 01'
-                              : '文本内容',
-                          isDense: true,
-                        ),
-                        onSubmitted: (_) => _send(),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    IconButton(
-                      icon: Icon(_hexMode ? Icons.hexagon : Icons.text_fields),
-                      tooltip: _hexMode ? '切换为文本模式' : '切换为 Hex 模式',
-                      onPressed: () => setState(() => _hexMode = !_hexMode),
-                    ),
-                    FilledButton(
-                      onPressed: _connected ? _send : null,
-                      child: const Text('发送'),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Text('模式：${_hexMode ? 'Hex（十六进制）' : '文本（UTF-8）'}',
-                    style: const TextStyle(fontSize: 12, color: Colors.grey)),
-              ],
-            ),
-          ),
-        ),
-        if (_error != null) ...[
-          const SizedBox(height: 12),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: Colors.red.shade50,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(_error!, style: const TextStyle(color: Colors.red)),
-          ),
-        ],
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Text('收发日志（${_log.length}）',
-                style:
-                    const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-            const Spacer(),
-            if (_log.isNotEmpty)
-              TextButton(
-                onPressed: () => setState(() => _log.clear()),
-                child: const Text('清空'),
-              ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        if (_log.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 24),
-            child: Center(
-              child: Text('连接后收发的数据会显示在这里（hex dump）',
-                  style: TextStyle(color: Colors.grey)),
-            ),
-          )
-        else
-          ..._log.map((e) {
-            final tx = e.dir == 'tx';
-            final c = tx ? Colors.blue : Colors.green;
-            return Card(
-              margin: const EdgeInsets.only(bottom: 8),
-              clipBehavior: Clip.antiAlias,
+    return Scaffold(
+      appBar: AppBar(title: const Text('TCP 客户端')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    color: c.withValues(alpha: 0.12),
-                    child: Row(
-                      children: [
-                        Icon(Icons.circle, size: 8, color: c),
-                        const SizedBox(width: 6),
-                        Text(tx ? 'TX →' : 'RX ←',
-                            style: TextStyle(
-                                color: c,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 12,
-                                fontFamily: 'monospace')),
-                        const Spacer(),
-                        Text('${e.bytes.length} B',
-                            style: const TextStyle(
-                                fontSize: 12, color: Colors.grey)),
-                        const SizedBox(width: 8),
-                        Text(
-                            '${e.time.hour.toString().padLeft(2, '0')}:'
-                            '${e.time.minute.toString().padLeft(2, '0')}:'
-                            '${e.time.second.toString().padLeft(2, '0')}',
-                            style: const TextStyle(
-                                fontSize: 12, color: Colors.grey)),
-                      ],
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.all(10),
-                    child: SelectableText(
-                      hexDump(e.bytes),
-                      style: const TextStyle(
-                        fontFamily: 'monospace',
-                        fontSize: 11,
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _hostCtl,
+                          decoration: const InputDecoration(
+                            labelText: '主机',
+                            hintText: 'IP 或域名',
+                            isDense: true,
+                          ),
+                          enabled: !_connected,
+                        ),
                       ),
-                    ),
+                      const SizedBox(width: 12),
+                      SizedBox(
+                        width: 100,
+                        child: TextField(
+                          controller: _portCtl,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                            labelText: '端口',
+                            isDense: true,
+                          ),
+                          enabled: !_connected,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Icon(Icons.circle, size: 10, color: color),
+                      const SizedBox(width: 6),
+                      Text(_connected ? '已连接' : '未连接',
+                          style: TextStyle(color: color, fontSize: 13)),
+                      const Spacer(),
+                      FilledButton.icon(
+                        onPressed: _busy ? null : _toggle,
+                        icon: _busy
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2, color: Colors.white),
+                              )
+                            : Icon(_connected ? Icons.link_off : Icons.link),
+                        label: Text(_connected ? '断开' : '连接'),
+                      ),
+                    ],
                   ),
                 ],
               ),
-            );
-          }),
-      ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _sendCtl,
+                          enabled: _connected,
+                          decoration: InputDecoration(
+                            labelText: '发送内容',
+                            hintText: _hexMode ? '十六进制，如 01 03 00 00 00 01'
+                                : '文本内容',
+                            isDense: true,
+                          ),
+                          onSubmitted: (_) => _send(),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        icon: Icon(_hexMode ? Icons.hexagon : Icons.text_fields),
+                        tooltip: _hexMode ? '切换为文本模式' : '切换为 Hex 模式',
+                        onPressed: () => setState(() => _hexMode = !_hexMode),
+                      ),
+                      FilledButton(
+                        onPressed: _connected ? _send : null,
+                        child: const Text('发送'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text('模式：${_hexMode ? 'Hex（十六进制）' : '文本（UTF-8）'}',
+                      style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                ],
+              ),
+            ),
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(_error!, style: const TextStyle(color: Colors.red)),
+            ),
+          ],
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Text('收发日志（${_log.length}）',
+                  style:
+                      const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+              const Spacer(),
+              if (_log.isNotEmpty)
+                TextButton(
+                  onPressed: () => setState(() => _log.clear()),
+                  child: const Text('清空'),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (_log.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 24),
+              child: Center(
+                child: Text('连接后收发的数据会显示在这里（hex dump）',
+                    style: TextStyle(color: Colors.grey)),
+              ),
+            )
+          else
+            ..._log.map((e) {
+              final tx = e.dir == 'tx';
+              final c = tx ? Colors.blue : Colors.green;
+              return Card(
+                margin: const EdgeInsets.only(bottom: 8),
+                clipBehavior: Clip.antiAlias,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 6),
+                      color: c.withValues(alpha: 0.12),
+                      child: Row(
+                        children: [
+                          Icon(Icons.circle, size: 8, color: c),
+                          const SizedBox(width: 6),
+                          Text(tx ? 'TX →' : 'RX ←',
+                              style: TextStyle(
+                                  color: c,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 12,
+                                  fontFamily: 'monospace')),
+                          const Spacer(),
+                          Text('${e.bytes.length} B',
+                              style: const TextStyle(
+                                  fontSize: 12, color: Colors.grey)),
+                          const SizedBox(width: 8),
+                          Text(
+                              '${e.time.hour.toString().padLeft(2, '0')}:'
+                              '${e.time.minute.toString().padLeft(2, '0')}:'
+                              '${e.time.second.toString().padLeft(2, '0')}',
+                              style: const TextStyle(
+                                  fontSize: 12, color: Colors.grey)),
+                        ],
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.all(10),
+                      child: SelectableText(
+                        hexDump(e.bytes),
+                        style: const TextStyle(
+                          fontFamily: 'monospace',
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+        ],
+      ),
     );
   }
 }
 
-/// Tab 2：端口扫描器。
-class _PortScanTab extends StatefulWidget {
-  const _PortScanTab();
+/// 端口扫描器。
+class PortScanPage extends StatefulWidget {
+  const PortScanPage({super.key});
 
   @override
-  State<_PortScanTab> createState() => _PortScanTabState();
+  State<PortScanPage> createState() => _PortScanPageState();
 }
 
 class _ScanResult {
@@ -448,7 +479,7 @@ class _ScanResult {
   final String? service;
 }
 
-class _PortScanTabState extends State<_PortScanTab> {
+class _PortScanPageState extends State<PortScanPage> {
   final _hostCtl = TextEditingController();
   final _portsCtl =
       TextEditingController(text: '502,1883,4840,80,443,21,22,23,3389');
@@ -577,127 +608,131 @@ class _PortScanTabState extends State<_PortScanTab> {
   @override
   Widget build(BuildContext context) {
     final openCount = _results.where((r) => r.open).length;
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                TextField(
-                  controller: _hostCtl,
-                  decoration: const InputDecoration(
-                    labelText: '目标主机',
-                    hintText: 'IP 或域名',
-                    isDense: true,
-                  ),
-                  enabled: !_scanning,
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _portsCtl,
-                  decoration: const InputDecoration(
-                    labelText: '端口',
-                    hintText: '逗号分隔或 a-b 区间，如 502,80-90',
-                    isDense: true,
-                  ),
-                  enabled: !_scanning,
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _scanning
-                          ? LinearProgressIndicator(value: _total == 0 ? 0 : _done / _total)
-                          : FilledButton.icon(
-                              onPressed: _scan,
-                              icon: const Icon(Icons.play_arrow),
-                              label: const Text('开始扫描'),
-                            ),
+    return Scaffold(
+      appBar: AppBar(title: const Text('端口扫描')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextField(
+                    controller: _hostCtl,
+                    decoration: const InputDecoration(
+                      labelText: '目标主机',
+                      hintText: 'IP 或域名',
+                      isDense: true,
                     ),
-                    if (_scanning) ...[
-                      const SizedBox(width: 12),
-                      Text('$_done/$_total',
-                          style: const TextStyle(color: Colors.grey)),
+                    enabled: !_scanning,
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _portsCtl,
+                    decoration: const InputDecoration(
+                      labelText: '端口',
+                      hintText: '逗号分隔或 a-b 区间，如 502,80-90',
+                      isDense: true,
+                    ),
+                    enabled: !_scanning,
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _scanning
+                            ? LinearProgressIndicator(
+                                value: _total == 0 ? 0 : _done / _total)
+                            : FilledButton.icon(
+                                onPressed: _scan,
+                                icon: const Icon(Icons.play_arrow),
+                                label: const Text('开始扫描'),
+                              ),
+                      ),
+                      if (_scanning) ...[
+                        const SizedBox(width: 12),
+                        Text('$_done/$_total',
+                            style: const TextStyle(color: Colors.grey)),
+                      ],
                     ],
-                  ],
-                ),
-              ],
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
-        if (_error != null) ...[
+          if (_error != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(_error!, style: const TextStyle(color: Colors.red)),
+            ),
+          ],
           const SizedBox(height: 12),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: Colors.red.shade50,
-              borderRadius: BorderRadius.circular(8),
+          if (_results.isNotEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.green.shade50,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text('扫描完成：发现 $openCount 个开放端口',
+                  style: TextStyle(color: Colors.green.shade700)),
             ),
-            child: Text(_error!, style: const TextStyle(color: Colors.red)),
-          ),
+          const SizedBox(height: 12),
+          if (_results.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 24),
+              child: Center(
+                child: Text('填写目标与端口后开始扫描',
+                    style: TextStyle(color: Colors.grey)),
+              ),
+            )
+          else
+            ..._results.map((r) {
+              final c = r.open ? Colors.green : Colors.grey;
+              return ListTile(
+                leading: Icon(r.open ? Icons.lock_open : Icons.lock, color: c),
+                title: Text('端口 ${r.port}',
+                    style: TextStyle(
+                        color: r.open ? null : Colors.grey, fontSize: 14)),
+                subtitle: r.open && r.service != null
+                    ? Text(r.service!, style: const TextStyle(fontSize: 12))
+                    : const Text('关闭', style: TextStyle(fontSize: 12)),
+                trailing: r.open
+                    ? const Chip(
+                        label: Text('开放'),
+                        backgroundColor: Colors.green,
+                        labelStyle: TextStyle(color: Colors.white, fontSize: 12),
+                      )
+                    : null,
+              );
+            }),
         ],
-        const SizedBox(height: 12),
-        if (_results.isNotEmpty)
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: Colors.green.shade50,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text('扫描完成：发现 $openCount 个开放端口',
-                style: TextStyle(color: Colors.green.shade700)),
-          ),
-        const SizedBox(height: 12),
-        if (_results.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 24),
-            child: Center(
-              child: Text('填写目标与端口后开始扫描',
-                  style: TextStyle(color: Colors.grey)),
-            ),
-          )
-        else
-          ..._results.map((r) {
-            final c = r.open ? Colors.green : Colors.grey;
-            return ListTile(
-              leading: Icon(r.open ? Icons.lock_open : Icons.lock, color: c),
-              title: Text('端口 ${r.port}',
-                  style: TextStyle(
-                      color: r.open ? null : Colors.grey, fontSize: 14)),
-              subtitle: r.open && r.service != null
-                  ? Text(r.service!, style: const TextStyle(fontSize: 12))
-                  : const Text('关闭', style: TextStyle(fontSize: 12)),
-              trailing: r.open
-                  ? const Chip(
-                      label: Text('开放'),
-                      backgroundColor: Colors.green,
-                      labelStyle: TextStyle(color: Colors.white, fontSize: 12),
-                    )
-                  : null,
-            );
-          }),
-      ],
+      ),
     );
   }
 }
 
-/// Tab 3：目标探测（TCP 连通性 + RTT）。
+/// 目标探测（TCP 连通性 + RTT）。
 ///
 /// 设计文档模块四.3 的 Traceroute 在纯 Dart / 当前 Flutter·Android SDK 下
 /// 无法真正逐跳实现：本 SDK 的 `dart:io` 不提供 [SocketOption.ipTtl]（无法设置
 /// IP 存活跳数），且移动端无法创建原始 ICMP 套接字读取中间路由响应。因此此处
 /// 退化为**对目标主机做多次 TCP 连通性探测并统计 RTT**（类似“TCP Ping”），
-/// 用于判断设备是否可达及其时延，无法列出中间路由 IP。结果仅供参考。
-class _TracerouteTab extends StatefulWidget {
-  const _TracerouteTab();
+/// 用于判断设备是否可达及其时延，无法列出中间路由 IP。结果仅供参考（4.3 边界）。
+class TargetProbePage extends StatefulWidget {
+  const TargetProbePage({super.key});
 
   @override
-  State<_TracerouteTab> createState() => _TracerouteTabState();
+  State<TargetProbePage> createState() => _TargetProbePageState();
 }
 
 class _ProbeResult {
@@ -708,7 +743,7 @@ class _ProbeResult {
   final String note;
 }
 
-class _TracerouteTabState extends State<_TracerouteTab> {
+class _TargetProbePageState extends State<TargetProbePage> {
   final _hostCtl = TextEditingController();
   final _portCtl = TextEditingController(text: '80');
   final List<_ProbeResult> _results = [];
@@ -781,159 +816,162 @@ class _TracerouteTabState extends State<_TracerouteTab> {
     final maxRtt = okRtts.isEmpty ? null : okRtts.reduce((a, b) => a > b ? a : b);
     final reachable = okRtts.isNotEmpty;
 
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: Colors.orange.shade50,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.orange.shade200),
+    return Scaffold(
+      appBar: AppBar(title: const Text('目标探测')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.orange.shade50,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.orange.shade200),
+            ),
+            child: const Text(
+              '本平台不支持逐跳 Traceroute（无 ipTtl / 无原始 ICMP 套接字），此处为'
+              '对目标的多次 TCP 连通性探测 + RTT 统计（TCP Ping），用于判断设备可达'
+              '性与时延，无法列出中间路由 IP。结果仅供参考。',
+              style: TextStyle(color: Colors.orange, fontSize: 12),
+            ),
           ),
-          child: const Text(
-            '本平台不支持逐跳 Traceroute（无 ipTtl / 无原始 ICMP 套接字），此处为'
-            '对目标的多次 TCP 连通性探测 + RTT 统计（TCP Ping），用于判断设备可达'
-            '性与时延，无法列出中间路由 IP。结果仅供参考。',
-            style: TextStyle(color: Colors.orange, fontSize: 12),
-          ),
-        ),
-        const SizedBox(height: 12),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _hostCtl,
-                        decoration: const InputDecoration(
-                          labelText: '目标主机',
-                          hintText: 'IP 或域名',
-                          isDense: true,
+          const SizedBox(height: 12),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _hostCtl,
+                          decoration: const InputDecoration(
+                            labelText: '目标主机',
+                            hintText: 'IP 或域名',
+                            isDense: true,
+                          ),
+                          enabled: !_running,
                         ),
-                        enabled: !_running,
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    SizedBox(
-                      width: 90,
-                      child: TextField(
-                        controller: _portCtl,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
-                          labelText: '端口',
-                          isDense: true,
+                      const SizedBox(width: 12),
+                      SizedBox(
+                        width: 90,
+                        child: TextField(
+                          controller: _portCtl,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                            labelText: '端口',
+                            isDense: true,
+                          ),
+                          enabled: !_running,
                         ),
-                        enabled: !_running,
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _running
-                          ? const LinearProgressIndicator()
-                          : FilledButton.icon(
-                              onPressed: _probeTarget,
-                              icon: const Icon(Icons.route),
-                              label: const Text('开始探测'),
-                            ),
-                    ),
-                  ],
-                ),
-              ],
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _running
+                            ? const LinearProgressIndicator()
+                            : FilledButton.icon(
+                                onPressed: _probeTarget,
+                                icon: const Icon(Icons.route),
+                                label: const Text('开始探测'),
+                              ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
-        if (_error != null) ...[
+          if (_error != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(_error!, style: const TextStyle(color: Colors.red)),
+            ),
+          ],
+          if (okRtts.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.green.shade50,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                '${reachable ? '目标可达' : '目标不可达'} · 探测 ${_results.length} 次 · '
+                'RTT 最小 ${minRtt!.inMilliseconds}ms / 平均 ${avg!.inMilliseconds}ms / '
+                '最大 ${maxRtt!.inMilliseconds}ms',
+                style: TextStyle(color: Colors.green.shade700, fontSize: 13),
+              ),
+            ),
+          ] else if (_results.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Text('目标不可达',
+                  style: TextStyle(color: Colors.red)),
+            ),
+          ],
           const SizedBox(height: 12),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: Colors.red.shade50,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(_error!, style: const TextStyle(color: Colors.red)),
-          ),
+          if (_results.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 24),
+              child: Center(
+                child: Text('探测结果将显示在这里',
+                    style: TextStyle(color: Colors.grey)),
+              ),
+            )
+          else
+            ..._results.map((r) {
+              final c = r.ok ? Colors.green : Colors.grey;
+              return ListTile(
+                leading: Icon(Icons.label, color: c, size: 18),
+                title: Text('探测 #${r.index}',
+                    style: const TextStyle(fontSize: 14)),
+                subtitle: Text(r.note, style: const TextStyle(fontSize: 12)),
+                trailing: r.rtt != null
+                    ? Text('${r.rtt!.inMilliseconds} ms',
+                        style: const TextStyle(fontSize: 12, color: Colors.grey))
+                    : null,
+              );
+            }),
         ],
-        if (okRtts.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: Colors.green.shade50,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              '${reachable ? '目标可达' : '目标不可达'} · 探测 ${_results.length} 次 · '
-              'RTT 最小 ${minRtt!.inMilliseconds}ms / 平均 ${avg!.inMilliseconds}ms / '
-              '最大 ${maxRtt!.inMilliseconds}ms',
-              style: TextStyle(color: Colors.green.shade700, fontSize: 13),
-            ),
-          ),
-        ] else if (_results.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: Colors.red.shade50,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Text('目标不可达',
-                style: TextStyle(color: Colors.red)),
-          ),
-        ],
-        const SizedBox(height: 12),
-        if (_results.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 24),
-            child: Center(
-              child: Text('探测结果将显示在这里',
-                  style: TextStyle(color: Colors.grey)),
-            ),
-          )
-        else
-          ..._results.map((r) {
-            final c = r.ok ? Colors.green : Colors.grey;
-            return ListTile(
-              leading: Icon(Icons.label, color: c, size: 18),
-              title: Text('探测 #${r.index}',
-                  style: const TextStyle(fontSize: 14)),
-              subtitle: Text(r.note, style: const TextStyle(fontSize: 12)),
-              trailing: r.rtt != null
-                  ? Text('${r.rtt!.inMilliseconds} ms',
-                      style: const TextStyle(fontSize: 12, color: Colors.grey))
-                  : null,
-            );
-          }),
-      ],
+      ),
     );
   }
 }
 
-/// Tab 4：局域网设备扫描。
+/// 局域网设备扫描。
 ///
 /// 对指定网段（x.x.x.1 ~ x.x.x.254）的某一端口做 TCP 探测，列出“开放该端口的
 /// 局域网主机 IP”。这是**局域网主机发现**工具，**不是** Modbus 从站地址
 /// （unit ID / 站号 1~247）。
-class _LanScanTab extends StatefulWidget {
-  const _LanScanTab();
+class LanScanPage extends StatefulWidget {
+  const LanScanPage({super.key});
 
   @override
-  State<_LanScanTab> createState() => _LanScanTabState();
+  State<LanScanPage> createState() => _LanScanPageState();
 }
 
-class _LanScanTabState extends State<_LanScanTab> {
+class _LanScanPageState extends State<LanScanPage> {
   final _prefixCtl = TextEditingController(text: '192.168.1');
   final _portCtl = TextEditingController(text: '502');
   final _timeoutCtl = TextEditingController(text: '300');
@@ -1023,167 +1061,170 @@ class _LanScanTabState extends State<_LanScanTab> {
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.blue.shade50,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.blue.shade100),
-          ),
-          child: const Text(
-            '扫描“开放某端口的局域网主机 IP”，用于发现同网段内提供服务的设备。'
-            '注意：这是局域网主机探测，不是 Modbus 从站地址（站号 1~247）。'
-            '要在具体设备上读写寄存器，请到对应协议调试页。',
-            style: TextStyle(color: Colors.blue, fontSize: 12),
-          ),
-        ),
-        const SizedBox(height: 12),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _prefixCtl,
-                        decoration: const InputDecoration(
-                          labelText: '网段前缀 (x.x.x)',
-                          isDense: true,
-                        ),
-                        enabled: !_scanning,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    OutlinedButton.icon(
-                      onPressed: _scanning ? null : _useLocalSubnet,
-                      icon: const Icon(Icons.auto_fix_high, size: 16),
-                      label: const Text('本机网段'),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _portCtl,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
-                          labelText: '端口',
-                          hintText: '如 502 / 1883 / 80',
-                          isDense: true,
-                        ),
-                        enabled: !_scanning,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    SizedBox(
-                      width: 110,
-                      child: TextField(
-                        controller: _timeoutCtl,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
-                          labelText: '超时(ms)',
-                          isDense: true,
-                        ),
-                        enabled: !_scanning,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _scanning
-                          ? LinearProgressIndicator(
-                              value: _total == 0 ? 0 : _done / _total,
-                            )
-                          : FilledButton.icon(
-                              onPressed: _scan,
-                              icon: const Icon(Icons.scanner),
-                              label: const Text('开始扫描'),
-                            ),
-                    ),
-                    if (_scanning) ...[
-                      const SizedBox(width: 12),
-                      Text('$_done/$_total',
-                          style: const TextStyle(color: Colors.grey)),
-                    ],
-                  ],
-                ),
-              ],
+    return Scaffold(
+      appBar: AppBar(title: const Text('局域网扫描')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade50,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.blue.shade100),
+            ),
+            child: const Text(
+              '扫描“开放某端口的局域网主机 IP”，用于发现同网段内提供服务的设备。'
+              '注意：这是局域网主机探测，不是 Modbus 从站地址（站号 1~247）。'
+              '要在具体设备上读写寄存器，请到对应协议调试页。',
+              style: TextStyle(color: Colors.blue, fontSize: 12),
             ),
           ),
-        ),
-        if (_error != null) ...[
           const SizedBox(height: 12),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: Colors.red.shade50,
-              borderRadius: BorderRadius.circular(8),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _prefixCtl,
+                          decoration: const InputDecoration(
+                            labelText: '网段前缀 (x.x.x)',
+                            isDense: true,
+                          ),
+                          enabled: !_scanning,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton.icon(
+                        onPressed: _scanning ? null : _useLocalSubnet,
+                        icon: const Icon(Icons.auto_fix_high, size: 16),
+                        label: const Text('本机网段'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _portCtl,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                            labelText: '端口',
+                            hintText: '如 502 / 1883 / 80',
+                            isDense: true,
+                          ),
+                          enabled: !_scanning,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      SizedBox(
+                        width: 110,
+                        child: TextField(
+                          controller: _timeoutCtl,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                            labelText: '超时(ms)',
+                            isDense: true,
+                          ),
+                          enabled: !_scanning,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _scanning
+                            ? LinearProgressIndicator(
+                                value: _total == 0 ? 0 : _done / _total,
+                              )
+                            : FilledButton.icon(
+                                onPressed: _scan,
+                                icon: const Icon(Icons.scanner),
+                                label: const Text('开始扫描'),
+                              ),
+                      ),
+                      if (_scanning) ...[
+                        const SizedBox(width: 12),
+                        Text('$_done/$_total',
+                            style: const TextStyle(color: Colors.grey)),
+                      ],
+                    ],
+                  ),
+                ],
+              ),
             ),
-            child: Text(_error!, style: const TextStyle(color: Colors.red)),
           ),
+          if (_error != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(_error!, style: const TextStyle(color: Colors.red)),
+            ),
+          ],
+          const SizedBox(height: 12),
+          if (_results.isNotEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.green.shade50,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                '发现 ${_results.length} 个开放端口 ${_portCtl.text.trim()} 的主机',
+                style: TextStyle(color: Colors.green.shade700, fontSize: 13),
+              ),
+            ),
+          const SizedBox(height: 12),
+          if (_results.isEmpty && !_scanning)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 24),
+              child: Center(
+                child: Text('填写网段前缀与端口后开始扫描',
+                    style: TextStyle(color: Colors.grey)),
+              ),
+            )
+          else if (_results.isNotEmpty)
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: _results
+                  .map((ip) => ActionChip(
+                        label: Text(ip),
+                        onPressed: () => _copy(ip),
+                        avatar: const Icon(Icons.content_copy, size: 16),
+                      ))
+                  .toList(),
+            ),
         ],
-        const SizedBox(height: 12),
-        if (_results.isNotEmpty)
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: Colors.green.shade50,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              '发现 ${_results.length} 个开放端口 ${_portCtl.text.trim()} 的主机',
-              style: TextStyle(color: Colors.green.shade700, fontSize: 13),
-            ),
-          ),
-        const SizedBox(height: 12),
-        if (_results.isEmpty && !_scanning)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 24),
-            child: Center(
-              child: Text('填写网段前缀与端口后开始扫描',
-                  style: TextStyle(color: Colors.grey)),
-            ),
-          )
-        else if (_results.isNotEmpty)
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: _results
-                .map((ip) => ActionChip(
-                      label: Text(ip),
-                      onPressed: () => _copy(ip),
-                      avatar: const Icon(Icons.content_copy, size: 16),
-                    ))
-                .toList(),
-          ),
-      ],
+      ),
     );
   }
 }
 
-/// Tab 5：IP 子网计算器。
-class _IpCalcTab extends StatefulWidget {
-  const _IpCalcTab();
+/// IP 子网计算器。
+class IpCalcPage extends StatefulWidget {
+  const IpCalcPage({super.key});
 
   @override
-  State<_IpCalcTab> createState() => _IpCalcTabState();
+  State<IpCalcPage> createState() => _IpCalcPageState();
 }
 
-class _IpCalcTabState extends State<_IpCalcTab> {
+class _IpCalcPageState extends State<IpCalcPage> {
   final _ipCtl = TextEditingController();
   final _maskCtl = TextEditingController(text: '255.255.255.0');
   String? _result;
@@ -1270,65 +1311,68 @@ class _IpCalcTabState extends State<_IpCalcTab> {
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('IP 子网计算',
-                    style: TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _ipCtl,
-                  decoration: const InputDecoration(
-                    labelText: 'IP 地址',
-                    hintText: '192.168.1.10',
-                    isDense: true,
-                  ),
-                  onChanged: (_) => _calc(),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _maskCtl,
-                  decoration: const InputDecoration(
-                    labelText: '子网掩码（或 /CIDR）',
-                    hintText: '255.255.255.0 或 /24',
-                    isDense: true,
-                  ),
-                  onChanged: (_) => _calc(),
-                ),
-                const SizedBox(height: 8),
-                FilledButton(onPressed: _calc, child: const Text('计算')),
-                if (_err != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Text(_err!,
-                        style:
-                            const TextStyle(color: Colors.red, fontSize: 13)),
-                  ),
-                if (_result != null) ...[
-                  const SizedBox(height: 10),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Colors.teal.shade50,
-                      borderRadius: BorderRadius.circular(8),
+    return Scaffold(
+      appBar: AppBar(title: const Text('IP 计算')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('IP 子网计算',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _ipCtl,
+                    decoration: const InputDecoration(
+                      labelText: 'IP 地址',
+                      hintText: '192.168.1.10',
+                      isDense: true,
                     ),
-                    child: SelectableText(_result!,
-                        style: const TextStyle(
-                            fontFamily: 'monospace', fontSize: 14)),
+                    onChanged: (_) => _calc(),
                   ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _maskCtl,
+                    decoration: const InputDecoration(
+                      labelText: '子网掩码（或 /CIDR）',
+                      hintText: '255.255.255.0 或 /24',
+                      isDense: true,
+                    ),
+                    onChanged: (_) => _calc(),
+                  ),
+                  const SizedBox(height: 8),
+                  FilledButton(onPressed: _calc, child: const Text('计算')),
+                  if (_err != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(_err!,
+                          style:
+                              const TextStyle(color: Colors.red, fontSize: 13)),
+                    ),
+                  if (_result != null) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.teal.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: SelectableText(_result!,
+                          style: const TextStyle(
+                              fontFamily: 'monospace', fontSize: 14)),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

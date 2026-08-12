@@ -14,6 +14,7 @@ import 'package:everlink/ui/websocket_page.dart';
 import 'package:everlink/ui/http_page.dart';
 import 'package:everlink/ui/opcua_page.dart';
 import 'package:everlink/ui/widgets/add_device_sheet.dart';
+import 'package:everlink/utils/app_routes.dart';
 
 /// 首页：以卡片形式展示用户保存的所有设备，并汇总在线 / 离线 / 连接中数量。
 ///
@@ -103,7 +104,7 @@ class _HomePageState extends State<HomePage> {
       case ProtocolType.opcUa:
         page = OpcUaPage(session: s);
     }
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
+    AppRoutes.push(context, page);
   }
 
   /// 底部弹窗：选择协议 → 填写名称与参数 → 保存（不自动连接）。

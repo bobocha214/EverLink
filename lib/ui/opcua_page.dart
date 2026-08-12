@@ -15,6 +15,7 @@ import 'package:everlink/services/connection_manager.dart';
 import 'package:everlink/services/history_service.dart';
 import 'package:everlink/services/session_manager.dart';
 import 'package:everlink/ui/widgets/connection_panel.dart';
+import 'package:everlink/utils/app_routes.dart';
 
 /// 监控轮询间隔（秒）。
 const Duration _kMonitorInterval = Duration(seconds: 2);
@@ -1070,17 +1071,13 @@ class _OpcUaPageState extends State<OpcUaPage>
 
   /// 打开单点位监控页：实时趋势 + 仪表盘 + 统计。
   void _openMonitor(OpcUaMonitorItem item) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => PointMonitorPage(
+    AppRoutes.push(context, PointMonitorPage(
           source: 'opcua',
           tag: item.nodeId,
           label: item.displayName,
           initial:
               List<DataPoint>.from(_series[item.nodeId] ?? const <DataPoint>[]),
-        ),
-      ),
-    );
+        ));
   }
 }
 

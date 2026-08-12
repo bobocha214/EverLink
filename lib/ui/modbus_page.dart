@@ -12,6 +12,7 @@ import 'package:everlink/services/modbus/modbus_client.dart';
 import 'package:everlink/services/modbus/modbus_parse.dart';
 import 'package:everlink/services/session_manager.dart';
 import 'package:everlink/ui/point_monitor_page.dart';
+import 'package:everlink/utils/app_routes.dart';
 
 enum _ModbusFunc {
   readHolding(0x03, '读保持寄存器 (0x03)'),
@@ -743,17 +744,13 @@ class _ModbusPageState extends State<ModbusPage> {
   /// 打开单点位监控页：实时趋势 + 仪表盘 + 统计，并可直接写入。
   void _openMonitor(_ModbusPoint p) {
     final tag = '${p.address}';
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => PointMonitorPage(
+    AppRoutes.push(context, PointMonitorPage(
           source: 'modbus',
           tag: tag,
           label: '寄存器 ${p.address}',
           initial: List<DataPoint>.from(_series[tag] ?? const <DataPoint>[]),
           onWrite: () => _showWriteDialog(p.address, p.value),
-        ),
-      ),
-    );
+        ));
   }
 
   void _onPoint(DataPoint p) {

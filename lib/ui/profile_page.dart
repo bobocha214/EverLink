@@ -7,6 +7,7 @@ import 'package:everlink/ui/protocol_config_page.dart';
 import 'package:everlink/ui/theme_page.dart';
 import 'package:everlink/ui/update_page.dart';
 import 'package:everlink/utils/app_constants.dart';
+import 'package:everlink/utils/app_routes.dart';
 
 /// “我的”页面：六大板块菜单，点击进入对应配置页。
 class ProfilePage extends StatelessWidget {
@@ -26,7 +27,7 @@ class ProfilePage extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          _buildHeader(),
+          _buildHeader(context),
           const SizedBox(height: 16),
           Card(
             child: Column(
@@ -35,27 +36,21 @@ class ProfilePage extends StatelessWidget {
                   icon: Icons.bolt,
                   title: '协议配置',
                   subtitle: '管理可启用的通信协议',
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const ProtocolConfigPage()),
-                  ),
+                  onTap: () => AppRoutes.push(context, const ProtocolConfigPage()),
                 ),
                 const Divider(height: 1),
                 _MenuItem(
                   icon: Icons.storage,
                   title: '数据存储',
                   subtitle: '查看与清理本地数据',
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const DataStoragePage()),
-                  ),
+                  onTap: () => AppRoutes.push(context, const DataStoragePage()),
                 ),
                 const Divider(height: 1),
                 _MenuItem(
                   icon: Icons.palette,
                   title: '主题',
                   subtitle: '浅色 / 深色 / 跟随系统',
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const ThemePage()),
-                  ),
+                  onTap: () => AppRoutes.push(context, const ThemePage()),
                 ),
                 const Divider(height: 1),
                 _MenuItem(
@@ -70,18 +65,14 @@ class ProfilePage extends StatelessWidget {
                   icon: Icons.system_update_alt,
                   title: '检查更新',
                   subtitle: '从 GitHub 检查新版本',
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const UpdatePage()),
-                  ),
+                  onTap: () => AppRoutes.push(context, const UpdatePage()),
                 ),
                 const Divider(height: 1),
                 _MenuItem(
                   icon: Icons.info_outline,
                   title: '关于 EverLink',
                   subtitle: '版本信息与开源仓库',
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const AboutPage()),
-                  ),
+                  onTap: () => AppRoutes.push(context, const AboutPage()),
                 ),
               ],
             ),
@@ -92,36 +83,36 @@ class ProfilePage extends StatelessWidget {
     );
   }
 
-  Widget _buildHeader() {
+  Widget _buildHeader(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Colors.teal.shade400, Colors.teal.shade600],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        color: scheme.primaryContainer,
         borderRadius: BorderRadius.circular(16),
       ),
-      child: const Row(
+      child: Row(
         children: [
           CircleAvatar(
-            radius: 28,
-            backgroundColor: Colors.white24,
-            child: Icon(Icons.cable, color: Colors.white, size: 28),
+            radius: 26,
+            backgroundColor: scheme.primary,
+            child: Icon(Icons.cable, color: scheme.onPrimary, size: 26),
           ),
-          SizedBox(width: 16),
+          const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('EverLink 设备调试',
+                Text('EverLink',
                     style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white)),
-                SizedBox(height: 4),
-                Text('工业设备协议调试工具', style: TextStyle(color: Colors.white70)),
+                        fontSize: 19,
+                        fontWeight: FontWeight.w700,
+                        color: scheme.onPrimaryContainer)),
+                const SizedBox(height: 2),
+                Text('工业设备协议调试工具',
+                    style: TextStyle(
+                        color: scheme.onPrimaryContainer.withValues(alpha: 0.72),
+                        fontSize: 13)),
               ],
             ),
           ),
@@ -147,7 +138,7 @@ class _MenuItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => ListTile(
-        leading: Icon(icon, color: Colors.teal),
+        leading: Icon(icon, color: Theme.of(context).colorScheme.primary),
         title: Text(title),
         subtitle: Text(subtitle, style: const TextStyle(fontSize: 12)),
         trailing: Icon(trailingIcon, size: 18),

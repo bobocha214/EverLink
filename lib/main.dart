@@ -6,6 +6,7 @@ import 'package:everlink/services/ping_history_service.dart';
 import 'package:everlink/services/session_manager.dart';
 import 'package:everlink/services/settings_service.dart';
 import 'package:everlink/ui/main_scaffold.dart';
+import 'package:everlink/utils/app_theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -46,24 +47,14 @@ class _EverlinkAppState extends State<EverlinkApp> {
     if (mounted) setState(() {});
   }
 
-  ThemeData _buildTheme(Brightness brightness) {
-    return ThemeData(
-      useMaterial3: true,
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: Colors.teal,
-        brightness: brightness,
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final settings = SettingsService.instance;
     return MaterialApp(
       title: 'EverLink',
       debugShowCheckedModeBanner: false,
-      theme: _buildTheme(Brightness.light),
-      darkTheme: _buildTheme(Brightness.dark),
+      theme: AppTheme.build(Brightness.light),
+      darkTheme: AppTheme.build(Brightness.dark),
       themeMode: settings.themeMode,
       home: const MainScaffold(),
     );
