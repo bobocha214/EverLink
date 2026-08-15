@@ -125,6 +125,8 @@ class ConnectionManager extends ChangeNotifier {
         return const HttpConnectionConfig(baseUrl: 'https://httpbin.org');
       case ProtocolType.opcUa:
         return const OpcUaConnectionConfig();
+      case ProtocolType.tcpRaw:
+        return const TcpRawConnectionConfig(host: '127.0.0.1');
     }
   }
 }

@@ -8,6 +8,7 @@ enum ProtocolType {
   webSocket,
   http,
   opcUa,
+  tcpRaw,
 }
 
 extension ProtocolTypeX on ProtocolType {
@@ -24,6 +25,8 @@ extension ProtocolTypeX on ProtocolType {
         return 'HTTP';
       case ProtocolType.opcUa:
         return 'OPC UA';
+      case ProtocolType.tcpRaw:
+        return 'TCP Client';
     }
   }
 }

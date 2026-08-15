@@ -83,6 +83,8 @@ class _AddDeviceSheetState extends State<_AddDeviceSheet> {
         _hostCtl.text = 'http://';
       case ProtocolType.opcUa:
         _hostCtl.text = 'opc.tcp://';
+      case ProtocolType.tcpRaw:
+        _portCtl.text = '502';
     }
     setState(() => _step = 1);
   }
@@ -151,6 +153,11 @@ class _AddDeviceSheetState extends State<_AddDeviceSheet> {
         );
       case ProtocolType.opcUa:
         config = OpcUaConnectionConfig(endpoint: host);
+      case ProtocolType.tcpRaw:
+        config = TcpRawConnectionConfig(
+          host: host,
+          port: int.tryParse(_portCtl.text) ?? 502,
+        );
     }
     final session =
         DeviceSession.create(name: name, type: _type!, config: config);
@@ -217,6 +224,8 @@ class _AddDeviceSheetState extends State<_AddDeviceSheet> {
         return 'Base URL（可留空）';
       case ProtocolType.opcUa:
         return 'OPC UA 端点（可留空）';
+      case ProtocolType.tcpRaw:
+        return 'IP 或域名（可留空，连接时再填）';
       default:
         return '地址';
     }
@@ -234,6 +243,8 @@ class _AddDeviceSheetState extends State<_AddDeviceSheet> {
         return 'https://api.example.com';
       case ProtocolType.opcUa:
         return 'opc.tcp://host:4840';
+      case ProtocolType.tcpRaw:
+        return '如 192.168.1.10';
       default:
         return '';
     }
@@ -244,7 +255,8 @@ class _AddDeviceSheetState extends State<_AddDeviceSheet> {
     final isMqtt = _type == ProtocolType.mqtt;
     final isWs = _type == ProtocolType.webSocket;
     final isHttp = _type == ProtocolType.http;
-    final showPort = isModbus || isMqtt;
+    final isTcpRaw = _type == ProtocolType.tcpRaw;
+    final showPort = isModbus || isMqtt || isTcpRaw;
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(

@@ -539,13 +539,11 @@ class _LanChatPageState extends State<LanChatPage> {
 
   void _showQrDialog() {
     final channel = widget.target.channel;
-    final url = manager.urlForChannel(channel);
     showDialog(
       context: context,
       builder: (_) => ChannelQrDialog(
-        url: url,
+        manager: manager,
         channel: channel,
-        isPrivate: (manager.channelPassword(channel) ?? '').isNotEmpty,
       ),
     );
   }
@@ -592,14 +590,13 @@ class _LanChatPageState extends State<LanChatPage> {
 class ChannelQrDialog extends StatefulWidget {
   const ChannelQrDialog({
     super.key,
-    required this.url,
+    required this.manager,
     required this.channel,
-    required this.isPrivate,
   });
 
-  final String url;
+  /// 快传统筹（ChangeNotifier）：二维码链接随对外 IP / 频道密码变化实时刷新。
+  final LanTransferManager manager;
   final String channel;
-  final bool isPrivate;
 
   @override
   State<ChannelQrDialog> createState() => _ChannelQrDialogState();
@@ -611,82 +608,143 @@ class _ChannelQrDialogState extends State<ChannelQrDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final manager = widget.manager;
+    final channel = widget.channel;
     return AlertDialog(
       title: Row(
         children: [
-          Icon(widget.isPrivate ? Icons.lock : Icons.tag,
-              size: 18, color: Colors.teal),
+          AnimatedBuilder(
+            animation: manager,
+            builder: (context, _) => Icon(
+              (manager.channelPassword(channel) ?? '').isNotEmpty
+                  ? Icons.lock
+                  : Icons.tag,
+              size: 18,
+              color: Colors.teal,
+            ),
+          ),
           const SizedBox(width: 6),
           Expanded(
-            child: Text(widget.channel,
+            child: Text(channel,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontSize: 16)),
           ),
         ],
       ),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          RepaintBoundary(
-            key: _boundaryKey,
-            child: Container(
-              color: Colors.white,
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
+      content: AnimatedBuilder(
+        animation: manager,
+        builder: (context, _) {
+          // 随对外 IP / 频道密码变化实时重算。
+          final url = manager.urlForChannel(channel);
+          final isPrivate =
+              (manager.channelPassword(channel) ?? '').isNotEmpty;
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // 对外地址直接在二维码界面切换：二维码随 selfAddress 实时刷新。
+              Row(
                 children: [
-                  ExcludeSemantics(
-                    child: SizedBox(
-                      width: 210,
-                      height: 210,
-                      child: QrImageView(
-                        data: widget.url,
-                        version: QrVersions.auto,
-                        size: 210,
-                        backgroundColor: Colors.white,
-                        errorStateBuilder: (ctx, err) => Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(12),
+                  const Text('对外地址',
+                      style: TextStyle(fontSize: 12, color: Colors.grey)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: DropdownButton<String?>(
+                      value: manager.selectedIp,
+                      isExpanded: true,
+                      isDense: true,
+                      hint: const Text('全部接口'),
+                      items: [
+                        const DropdownMenuItem(
+                          value: null,
+                          child: Text('全部接口（自动主地址）',
+                              overflow: TextOverflow.ellipsis),
+                        ),
+                        for (final a in manager.allAddresses)
+                          DropdownMenuItem(
+                            value: a['ip'] as String,
                             child: Text(
-                              '二维码生成失败：${err.toString().split('\n').first}',
-                              style: const TextStyle(fontSize: 12, color: Colors.red),
-                              textAlign: TextAlign.center,
+                              '${a['ip']}  ${a['type'] ?? ''}',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                      ],
+                      onChanged: (v) {
+                        manager.setSelectedIp(v).then((r) {
+                          if (r.detail.isNotEmpty && context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text(r.detail)),
+                            );
+                          }
+                        });
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              RepaintBoundary(
+                key: _boundaryKey,
+                child: Container(
+                  color: Colors.white,
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ExcludeSemantics(
+                        child: SizedBox(
+                          width: 210,
+                          height: 210,
+                          child: QrImageView(
+                            data: url,
+                            version: QrVersions.auto,
+                            size: 210,
+                            backgroundColor: Colors.white,
+                            errorStateBuilder: (ctx, err) => Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: Text(
+                                  '二维码生成失败：${err.toString().split('\n').first}',
+                                  style: const TextStyle(fontSize: 12, color: Colors.red),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
                             ),
                           ),
                         ),
                       ),
-                    ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'EverLink 快传 · $channel',
+                        style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.black87,
+                            fontWeight: FontWeight.w600),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'EverLink 快传 · ${widget.channel}',
-                    style: const TextStyle(
-                        fontSize: 12,
-                        color: Colors.black87,
-                        fontWeight: FontWeight.w600),
-                  ),
-                ],
+                ),
               ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          SelectableText(widget.url,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 12)),
-          const SizedBox(height: 6),
-          Text(
-            widget.isPrivate
-                ? '扫码后需输入频道密码才能加入'
-                : '对方扫码或用浏览器打开即可进入该频道聊天',
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 11, color: Colors.grey),
-          ),
-        ],
+              const SizedBox(height: 12),
+              SelectableText(url,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 12)),
+              const SizedBox(height: 6),
+              Text(
+                isPrivate
+                    ? '扫码后需输入频道密码才能加入'
+                    : '对方扫码或用浏览器打开即可进入该频道聊天',
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 11, color: Colors.grey),
+              ),
+            ],
+          );
+        },
       ),
       actions: [
         TextButton(
           onPressed: () {
-            Clipboard.setData(ClipboardData(text: widget.url));
+            Clipboard.setData(
+                ClipboardData(text: manager.urlForChannel(channel)));
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('链接已复制')),
             );

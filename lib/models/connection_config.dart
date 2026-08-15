@@ -394,6 +394,56 @@ class OpcUaConnectionConfig extends ConnectionConfig {
   ConnectionConfig copyWithConfig() => copyWith();
 }
 
+/// TCP 原始连接配置（通用字节流通道，无应用层协议语义）。
+///
+/// 与 [ModbusConnectionConfig] 不同，这里不解析寄存器 / 报文结构，仅描述
+/// 一个 host:port 的裸 TCP 端点，供 [TcpRawProtocol] 收发任意字节流。
+class TcpRawConnectionConfig extends ConnectionConfig {
+  /// 目标主机地址（IP 或域名）。
+  final String host;
+
+  /// 目标端口。
+  final int port;
+
+  /// 连接超时时间。
+  final Duration timeout;
+
+  const TcpRawConnectionConfig({
+    this.host = '',
+    this.port = 502,
+    this.timeout = const Duration(seconds: 5),
+  });
+
+  TcpRawConnectionConfig copyWith({
+    String? host,
+    int? port,
+    Duration? timeout,
+  }) {
+    return TcpRawConnectionConfig(
+      host: host ?? this.host,
+      port: port ?? this.port,
+      timeout: timeout ?? this.timeout,
+    );
+  }
+
+  @override
+  Map<String, dynamic> toJson() => {
+        'host': host,
+        'port': port,
+        'timeout': timeout.inSeconds,
+      };
+
+  factory TcpRawConnectionConfig.fromJson(Map<String, dynamic> j) =>
+      TcpRawConnectionConfig(
+        host: j['host'] as String? ?? '',
+        port: j['port'] as int? ?? 502,
+        timeout: Duration(seconds: j['timeout'] as int? ?? 5),
+      );
+
+  @override
+  ConnectionConfig copyWithConfig() => copyWith();
+}
+
 /// 将具体配置对象序列化为带类型标记的 JSON。
 Map<String, dynamic> configToJson(ConnectionConfig config) {
   if (config is ModbusConnectionConfig) {
@@ -410,6 +460,9 @@ Map<String, dynamic> configToJson(ConnectionConfig config) {
   }
   if (config is OpcUaConnectionConfig) {
     return {'type': ProtocolType.opcUa.name, 'config': config.toJson()};
+  }
+  if (config is TcpRawConnectionConfig) {
+    return {'type': ProtocolType.tcpRaw.name, 'config': config.toJson()};
   }
   throw ArgumentError('未知连接配置类型：${config.runtimeType}');
 }
@@ -429,5 +482,8 @@ ConnectionConfig configFromJson(Map<String, dynamic> j) {
       return HttpConnectionConfig.fromJson(j['config'] as Map<String, dynamic>);
     case ProtocolType.opcUa:
       return OpcUaConnectionConfig.fromJson(j['config'] as Map<String, dynamic>);
+    case ProtocolType.tcpRaw:
+      return TcpRawConnectionConfig.fromJson(
+          j['config'] as Map<String, dynamic>);
   }
 }

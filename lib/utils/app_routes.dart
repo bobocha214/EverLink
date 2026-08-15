@@ -40,4 +40,12 @@ class AppRoutes {
   static Future<T?> push<T>(BuildContext context, Widget page) {
     return Navigator.of(context).push<T>(AppRoutes.page<T>(page));
   }
+
+  /// 以统一过渡替换当前页面。
+  ///
+  /// 用于同组工具子页之间的快捷切换，避免反复 push 把页面栈堆厚
+  /// （例如进制工具五个页面互相跳转时）。
+  static Future<T?> replace<T>(BuildContext context, Widget page) {
+    return Navigator.of(context).pushReplacement<T, T>(AppRoutes.page<T>(page));
+  }
 }

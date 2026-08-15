@@ -13,6 +13,7 @@ import 'package:everlink/ui/mqtt_page.dart';
 import 'package:everlink/ui/websocket_page.dart';
 import 'package:everlink/ui/http_page.dart';
 import 'package:everlink/ui/opcua_page.dart';
+import 'package:everlink/ui/tcp_raw_detail_page.dart';
 import 'package:everlink/ui/widgets/add_device_sheet.dart';
 import 'package:everlink/utils/app_routes.dart';
 
@@ -103,6 +104,8 @@ class _HomePageState extends State<HomePage> {
         page = HttpPage(session: s);
       case ProtocolType.opcUa:
         page = OpcUaPage(session: s);
+      case ProtocolType.tcpRaw:
+        page = TcpRawDetailPage(session: s);
     }
     AppRoutes.push(context, page);
   }
@@ -121,6 +124,7 @@ class _HomePageState extends State<HomePage> {
     if (c is WebSocketConnectionConfig) return c.url.trim().isNotEmpty;
     if (c is HttpConnectionConfig) return c.baseUrl.trim().isNotEmpty;
     if (c is OpcUaConnectionConfig) return c.endpoint.trim().isNotEmpty;
+    if (c is TcpRawConnectionConfig) return c.host.trim().isNotEmpty;
     return true;
   }
 

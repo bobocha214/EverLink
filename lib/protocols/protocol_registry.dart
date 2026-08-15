@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:everlink/models/protocol_type.dart';
 import 'package:everlink/protocols/device_protocol.dart';
 import 'package:everlink/protocols/modbus_tcp_protocol.dart';
+import 'package:everlink/protocols/tcp_raw_protocol.dart';
 import 'package:everlink/protocols/mqtt_protocol.dart';
 import 'package:everlink/protocols/websocket_protocol.dart';
 import 'package:everlink/protocols/http_protocol.dart';
@@ -69,6 +70,13 @@ class ProtocolRegistry {
       description: '工业设备地址空间浏览与变量读写',
       icon: Icons.account_tree,
       create: () => OpcUaProtocol(),
+    ),
+    ProtocolDescriptor(
+      type: ProtocolType.tcpRaw,
+      name: 'TCP Client',
+      description: '建立裸 TCP 连接，收发任意字节流（hex / ASCII 调试）',
+      icon: Icons.hub,
+      create: () => TcpRawProtocol(),
     ),
   ];
 

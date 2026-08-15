@@ -4,7 +4,7 @@ import 'package:everlink/ui/base_tool_page.dart';
 import 'package:everlink/ui/clipboard_manager_page.dart';
 import 'package:everlink/ui/lan_transfer_page.dart';
 import 'package:everlink/ui/network_debug_page.dart';
-import 'package:everlink/ui/ping_page.dart';
+import 'package:everlink/ui/server_sim_page.dart';
 import 'package:everlink/utils/app_routes.dart';
 
 /// 工具聚合页：承载快传、网络诊断等独立工具入口。
@@ -35,18 +35,10 @@ class ToolsPage extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           _ToolCard(
-            icon: Icons.network_ping_outlined,
-            color: Colors.blue,
-            title: '网络诊断',
-            subtitle: '对目标主机执行 ICMP Ping，查看时延与丢包率',
-            onTap: () => AppRoutes.push(context, const PingPage()),
-          ),
-          const SizedBox(height: 12),
-          _ToolCard(
             icon: Icons.terminal_outlined,
             color: Colors.purple,
             title: '网络调试',
-            subtitle: 'TCP 客户端、端口扫描、目标探测、局域网扫描、IP 子网计算',
+            subtitle: '端口扫描、目标探测、局域网扫描、IP 子网计算、网络诊断',
             onTap: () => AppRoutes.push(context, const NetworkDebugPage()),
           ),
           const SizedBox(height: 12),
@@ -56,6 +48,14 @@ class ToolsPage extends StatelessWidget {
             title: '进制工具',
             subtitle: '二/八/十/十六进制互转、补码、字节视图、文本⇄Hex、CRC16',
             onTap: () => AppRoutes.push(context, const BaseToolPage()),
+          ),
+          const SizedBox(height: 12),
+          _ToolCard(
+            icon: Icons.dns_outlined,
+            color: Colors.indigo,
+            title: '服务模拟',
+            subtitle: '在手机上运行 TCP / Modbus TCP / OPC UA 服务端，便于联调',
+            onTap: () => AppRoutes.push(context, const ServerSimPage()),
           ),
         ],
       ),

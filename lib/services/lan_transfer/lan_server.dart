@@ -39,6 +39,7 @@ class _WebClient {
 class LanServer {
   LanServer({
     required this.port,
+    this.bindAddress = '0.0.0.0',
     required this.selfId,
     required this.selfNameProvider,
     required this.selfAddressProvider,
@@ -53,6 +54,8 @@ class LanServer {
   });
 
   final int port;
+  /// 服务器绑定的地址：'0.0.0.0' 表示监听全部网卡接口，否则绑定到指定 IP。
+  final String bindAddress;
   final String selfId;
   final String Function() selfNameProvider;
   final String Function() selfAddressProvider;
@@ -130,7 +133,8 @@ class LanServer {
   }
 
   Future<void> start() async {
-    _server = await HttpServer.bind(InternetAddress.anyIPv4, port, shared: true);
+    _server =
+        await HttpServer.bind(InternetAddress(bindAddress), port, shared: true);
     _server!.listen(_handle);
   }
 

@@ -23,6 +23,7 @@ class LanTransferManager extends ChangeNotifier {
   static const _kChannelsKey = 'lan_channels';
   static const _kMessagesKey = 'lan_messages';
   static const _kPortKey = 'lan_transfer_port';
+  static const _kBindIpKey = 'lan_bind_ip';
   static const int _kMaxStoredMessages = 200;
 
   final StreamController<LanMessage> _controller =
@@ -37,6 +38,8 @@ class LanTransferManager extends ChangeNotifier {
 
   bool _running = false;
   int _port = 5321;
+  /// 对外绑定 / 展示的 IP；null 表示监听全部接口（anyIPv4）并自动用主地址。
+  String? _selectedIp;
   late final String _selfId = DeviceDiscovery.genId();
   String _selfName = '';
   String _selfAddress = '';
@@ -56,6 +59,10 @@ class LanTransferManager extends ChangeNotifier {
   String get selfName => _selfName;
   String get selfAddress => _selfAddress;
   int get port => _port;
+  /// 服务器实际绑定地址：null 表示监听全部接口（anyIPv4），否则绑定到指定 IP。
+  String get bindAddress => _selectedIp ?? '0.0.0.0';
+  /// 当前选择的对外 IP；null 表示自动（使用主地址）。
+  String? get selectedIp => _selectedIp;
   bool get isScanning => _discovery?.isScanning ?? false;
 
   /// 所有本机局域网 IP（含接口名、是否主地址）。
@@ -108,9 +115,10 @@ class LanTransferManager extends ChangeNotifier {
     await _loadPrefs();
     await _loadMessages();
     await _loadPort();
+    await _loadSelectedIp();
 
     final net = await NetworkInfoService.instance.collect(port: _port);
-    _selfAddress = '${net.primaryIp}:$_port';
+    _selfAddress = '${_selectedIp ?? net.primaryIp}:$_port';
     _allAddresses = net.addresses.map((a) => a.toMap()).toList();
     _networkInfo = net.toInfoMap(_port);
 
@@ -120,20 +128,7 @@ class LanTransferManager extends ChangeNotifier {
       selfName: _selfName,
       onChanged: notifyListeners,
     );
-    _server = LanServer(
-      port: _port,
-      selfId: _selfId,
-      selfNameProvider: () => _selfName,
-      selfAddressProvider: () => _selfAddress,
-      allAddressesProvider: () => _allAddresses,
-      networkInfoProvider: () => _networkInfo,
-      devicesProvider: () => devices,
-      channelsProvider: () => _channels,
-      messagesProvider: () => _messages,
-      fileFinder: findFile,
-      onMessage: _onMessage,
-      onDevicesChanged: notifyListeners,
-    );
+    _server = _createServer();
 
     await _server!.start();
     await _discovery!.start();
@@ -200,10 +195,95 @@ class LanTransferManager extends ChangeNotifier {
     } catch (_) {}
   }
 
+  /// 构造 HTTP 服务实例（绑定地址跟随当前选择的 IP）。
+  LanServer _createServer() => LanServer(
+        port: _port,
+        bindAddress: bindAddress,
+        selfId: _selfId,
+        selfNameProvider: () => _selfName,
+        selfAddressProvider: () => _selfAddress,
+        allAddressesProvider: () => _allAddresses,
+        networkInfoProvider: () => _networkInfo,
+        devicesProvider: () => devices,
+        channelsProvider: () => _channels,
+        messagesProvider: () => _messages,
+        fileFinder: findFile,
+        onMessage: _onMessage,
+        onDevicesChanged: notifyListeners,
+      );
+
+  /// 仅重启 HTTP 服务（保留设备发现与网络刷新定时器）。
+  Future<void> _restartHttpServer() async {
+    await _server?.stop();
+    _server = _createServer();
+    await _server!.start();
+  }
+
+  /// 选择对外连接地址（IP）：null 表示监听全部接口（自动用主地址）。
+  /// 运行中调用会重启 HTTP 服务以应用新绑定；若所选 IP 不可用则回退到全部接口。
+  /// 无论是否运行中，都会重算 [_selfAddress]，保证二维码等展示的地址立即跟随。
+  Future<({bool ok, String detail})> setSelectedIp(String? ip) async {
+    final next = ip != null && ip.isNotEmpty ? ip : null;
+    _selectedIp = next;
+    await _saveSelectedIp();
+    if (!_running) {
+      // 下次启动生效；同时刷新 selfAddress，使二维码预览与提示一致。
+      try {
+        await refreshAddress();
+      } catch (_) {}
+      notifyListeners();
+      return (
+        ok: true,
+        detail: next == null ? '下次启动将使用全部接口' : '已记录绑定地址 $next'
+      );
+    }
+    try {
+      // 先用新 IP 重算 selfAddress（null→主地址），再重启 HTTP 服务应用新绑定。
+      await refreshAddress();
+      await _restartHttpServer();
+      notifyListeners();
+      return (
+        ok: true,
+        detail: next == null
+            ? '已切换为全部接口（自动主地址）'
+            : '已绑定到 $next'
+      );
+    } catch (_) {
+      // 绑定失败（如所选 IP 已失效）→ 回退到全部接口。
+      _selectedIp = null;
+      await _saveSelectedIp();
+      try {
+        await refreshAddress();
+        await _restartHttpServer();
+      } catch (_) {}
+      notifyListeners();
+      return (ok: false, detail: '所选 IP 不可用，已回退到全部接口');
+    }
+  }
+
+  Future<void> _loadSelectedIp() async {
+    try {
+      final sp = await SharedPreferences.getInstance();
+      final ip = sp.getString(_kBindIpKey);
+      _selectedIp = ip != null && ip.isNotEmpty ? ip : null;
+    } catch (_) {}
+  }
+
+  Future<void> _saveSelectedIp() async {
+    try {
+      final sp = await SharedPreferences.getInstance();
+      if (_selectedIp == null) {
+        await sp.remove(_kBindIpKey);
+      } else {
+        await sp.setString(_kBindIpKey, _selectedIp!);
+      }
+    } catch (_) {}
+  }
+
   /// 网络切换后重新获取地址（例如从移动数据切到 WiFi）。
   Future<void> refreshAddress() async {
     final net = await NetworkInfoService.instance.collect(port: _port);
-    _selfAddress = '${net.primaryIp}:$_port';
+    _selfAddress = '${_selectedIp ?? net.primaryIp}:$_port';
     _allAddresses = net.addresses.map((a) => a.toMap()).toList();
     _networkInfo = net.toInfoMap(_port);
     notifyListeners();
@@ -212,7 +292,7 @@ class LanTransferManager extends ChangeNotifier {
   /// 刷新网络信息（WiFi 信号强度、IP 变化等）。
   Future<void> _refreshNetworkInfo() async {
     final net = await NetworkInfoService.instance.collect(port: _port);
-    _selfAddress = '${net.primaryIp}:$_port';
+    _selfAddress = '${_selectedIp ?? net.primaryIp}:$_port';
     _allAddresses = net.addresses.map((a) => a.toMap()).toList();
     _networkInfo = net.toInfoMap(_port);
     notifyListeners();

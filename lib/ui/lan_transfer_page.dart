@@ -90,6 +90,7 @@ class _LanTransferPageState extends State<LanTransferPage> {
           itemBuilder: (_) => const [
             PopupMenuItem(value: 'name', child: Text('修改我的名字')),
             PopupMenuItem(value: 'add', child: Text('手动添加设备')),
+            PopupMenuItem(value: 'bindip', child: Text('选择对外 IP')),
             PopupMenuItem(value: 'port', child: Text('修改端口')),
             PopupMenuItem(value: 'refresh', child: Text('刷新网络信息')),
             PopupMenuItem(value: 'help', child: Text('使用说明')),
@@ -116,6 +117,8 @@ class _LanTransferPageState extends State<LanTransferPage> {
         _addDeviceManually();
       case 'port':
         _changePort();
+      case 'bindip':
+        _selectBindIpDialog();
       case 'refresh':
         _refreshNetwork();
       case 'help':
@@ -130,6 +133,76 @@ class _LanTransferPageState extends State<LanTransferPage> {
     await manager.refreshAddress();
     if (!mounted) return;
     _toast('网络信息已刷新');
+  }
+
+  /// 选择对外连接地址（IP）：对方扫码 / 访问将使用该地址。
+  /// null 表示监听全部接口（自动用主地址）。
+  Future<void> _selectBindIpDialog() async {
+    final addrs = manager.allAddresses;
+    if (addrs.isEmpty) {
+      _toast('暂无可用的局域网地址');
+      return;
+    }
+    String? picked = manager.selectedIp;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (d) => StatefulBuilder(
+        builder: (_, setLocal) => AlertDialog(
+          title: const Text('选择对外 IP'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                '对方扫码或访问网页将使用此地址。选择具体 IP 可限定只在该网卡上监听。',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+              const SizedBox(height: 12),
+              InputDecorator(
+                decoration: const InputDecoration(
+                  labelText: '对外 IP',
+                  isDense: true,
+                ),
+                child: DropdownButton<String?>(
+                  value: picked,
+                  isExpanded: true,
+                  isDense: true,
+                  underline: const SizedBox.shrink(),
+                  items: [
+                    const DropdownMenuItem(
+                      value: null,
+                      child: Text('全部接口（自动主地址）'),
+                    ),
+                    for (final a in addrs)
+                      DropdownMenuItem(
+                        value: a['ip'] as String,
+                        child: Text(
+                          '${a['ip']}  ${a['type'] ?? ''}',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                  ],
+                  onChanged: (v) => setLocal(() => picked = v),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(d, false),
+                child: const Text('取消')),
+            FilledButton(
+              onPressed: () => Navigator.pop(d, true),
+              child: const Text('保存'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (ok != true) return;
+    final r = await manager.setSelectedIp(picked);
+    if (!mounted) return;
+    _toast(r.detail);
   }
 
   Future<void> _changePort() async {
@@ -267,6 +340,7 @@ class _LanTransferPageState extends State<LanTransferPage> {
   Widget _buildNetPanel() {
     final info = manager.networkInfo;
     final addrs = manager.allAddresses;
+    final activeIp = manager.selfAddress.split(':').first;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
@@ -295,18 +369,24 @@ class _LanTransferPageState extends State<LanTransferPage> {
                 final ip = a['ip'] as String? ?? '';
                 final type = a['type'] as String? ?? '';
                 final isPrimary = a['primary'] == true;
+                final isActive = ip == activeIp;
+                final highlight = isActive || isPrimary;
                 return GestureDetector(
                   onTap: () => _copyText('http://$ip:${manager.port}/'),
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
-                      color: isPrimary
-                          ? Colors.teal.withValues(alpha: 0.12)
-                          : Colors.grey.withValues(alpha: 0.08),
+                      color: isActive
+                          ? Colors.teal.withValues(alpha: 0.18)
+                          : isPrimary
+                              ? Colors.teal.withValues(alpha: 0.12)
+                              : Colors.grey.withValues(alpha: 0.08),
                       border: Border.all(
-                        color: isPrimary
-                            ? Colors.teal.withValues(alpha: 0.3)
-                            : Colors.grey.withValues(alpha: 0.2),
+                        color: isActive
+                            ? Colors.teal
+                            : isPrimary
+                                ? Colors.teal.withValues(alpha: 0.3)
+                                : Colors.grey.withValues(alpha: 0.2),
                       ),
                       borderRadius: BorderRadius.circular(8),
                     ),
@@ -318,7 +398,7 @@ class _LanTransferPageState extends State<LanTransferPage> {
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
-                            color: isPrimary ? Colors.teal : Colors.black87,
+                            color: highlight ? Colors.teal : Colors.black87,
                           ),
                         ),
                         if (type.isNotEmpty) ...[
@@ -335,7 +415,20 @@ class _LanTransferPageState extends State<LanTransferPage> {
                             ),
                           ),
                         ],
-                        if (isPrimary) ...[
+                        if (isActive) ...[
+                          const SizedBox(width: 4),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: Colors.teal,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: const Text(
+                              '对外',
+                              style: TextStyle(fontSize: 9, color: Colors.white),
+                            ),
+                          ),
+                        ] else if (isPrimary) ...[
                           const SizedBox(width: 4),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
@@ -907,13 +1000,11 @@ class _LanTransferPageState extends State<LanTransferPage> {
   }
 
   void _showQrForChannel(String channel) {
-    final url = manager.urlForChannel(channel);
     showDialog(
       context: context,
       builder: (_) => ChannelQrDialog(
-        url: url,
+        manager: manager,
         channel: channel,
-        isPrivate: (manager.channelPassword(channel) ?? '').isNotEmpty,
       ),
     );
   }

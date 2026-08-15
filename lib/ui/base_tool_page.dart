@@ -4,61 +4,128 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'package:everlink/utils/app_routes.dart';
+
 /// 进制工具页（离线，无需连接设备）。
 ///
-/// 由「十六进制工具」升级而来，新增「进制转换」主 Tab，支持
-/// 二进制 / 八进制 / 十进制 / 十六进制 任意互转（BigInt 大整数），
-/// 可选有符号补码与字节视图；并保留原有的 文本⇄Hex、大小端、
-/// FLOAT32 解析、CRC16-Modbus 校验 四个 Tab。
-class BaseToolPage extends StatefulWidget {
+/// 以「目录页 + 独立子页面」呈现，与「网络调试」一致的展示形态：
+/// 入口为功能卡片列表，点击进入各自的独立页面（不左右滑动切换）。
+/// 包含：进制转换、文本⇄Hex、大小端、浮点、CRC16-Modbus 五个功能。
+class BaseToolPage extends StatelessWidget {
   const BaseToolPage({super.key});
 
   @override
-  State<BaseToolPage> createState() => _BaseToolPageState();
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: AppBar(title: const Text('进制工具')),
+      body: ListView.separated(
+        padding: const EdgeInsets.all(16),
+        itemCount: _baseFuncs.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 12),
+        itemBuilder: (context, i) {
+          final f = _baseFuncs[i];
+          return Card(
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: () => AppRoutes.push(context, f.page),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: scheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(f.icon, color: scheme.primary, size: 24),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(f.label,
+                              style: const TextStyle(
+                                  fontSize: 16, fontWeight: FontWeight.w600)),
+                          const SizedBox(height: 4),
+                          Text(f.desc,
+                              style: TextStyle(
+                                  fontSize: 13, color: scheme.onSurfaceVariant)),
+                        ],
+                      ),
+                    ),
+                    Icon(Icons.chevron_right,
+                        color: scheme.onSurfaceVariant),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
 }
 
-class _BaseToolPageState extends State<BaseToolPage>
-    with SingleTickerProviderStateMixin {
-  late final TabController _tab;
+/// 进制工具的五个功能入口（目录页使用）。
+class _BaseFunc {
+  const _BaseFunc(this.icon, this.label, this.desc, this.page);
+  final IconData icon;
+  final String label;
+  final String desc;
+  final Widget page;
+}
 
-  @override
-  void initState() {
-    super.initState();
-    _tab = TabController(length: 5, vsync: this);
-  }
+const List<_BaseFunc> _baseFuncs = [
+  _BaseFunc(Icons.swap_horiz_outlined, '进制转换',
+      '二/八/十/十六进制任意互转，支持补码与字节视图', _BaseConvertPage()),
+  _BaseFunc(Icons.text_fields, '文本⇄Hex',
+      '文本与十六进制（UTF-8）互转', _TextHexPage()),
+  _BaseFunc(Icons.swap_vert, '大小端',
+      '字节序翻转（16 / 32 / 64 位）', _EndianPage()),
+  _BaseFunc(Icons.numbers, '浮点',
+      'IEEE754 FLOAT32 解析（大小端）', _FloatPage()),
+  _BaseFunc(Icons.check_circle_outline, 'CRC16',
+      'CRC16-Modbus 校验', _CrcPage()),
+];
 
-  @override
-  void dispose() {
-    _tab.dispose();
-    super.dispose();
-  }
+/// 进制工具各子页底部的功能快捷条：横向滚动的 chip，当前页高亮，
+/// 点击用 [AppRoutes.replace] 切换到其它进制功能（不堆积页面栈）。
+class _BaseQuickBar extends StatelessWidget {
+  const _BaseQuickBar({required this.currentIndex});
+  final int currentIndex;
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('进制工具'),
-        bottom: TabBar(
-          controller: _tab,
-          isScrollable: true,
-          tabs: const [
-            Tab(text: '进制转换'),
-            Tab(text: '文本⇄Hex'),
-            Tab(text: '大小端'),
-            Tab(text: '浮点'),
-            Tab(text: 'CRC16'),
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      decoration: BoxDecoration(
+        border: Border(top: BorderSide(color: scheme.outlineVariant)),
+        color: scheme.surface,
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            for (var i = 0; i < _baseFuncs.length; i++)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: ChoiceChip(
+                  label: Text(_baseFuncs[i].label),
+                  selected: i == currentIndex,
+                  onSelected: (_) {
+                    if (i != currentIndex) {
+                      AppRoutes.replace(context, _baseFuncs[i].page);
+                    }
+                  },
+                ),
+              ),
           ],
         ),
-      ),
-      body: TabBarView(
-        controller: _tab,
-        children: const [
-          _BaseConvertTab(),
-          _TextHexTab(),
-          _EndianTab(),
-          _FloatTab(),
-          _CrcTab(),
-        ],
       ),
     );
   }
@@ -114,15 +181,15 @@ BigInt _toSigned(BigInt u, int width) {
 
 String _pad(String s, int len) => s.padLeft(len, '0');
 
-/// Tab 0：多种进制互转（BigInt 大整数 + 可选补码 + 字节视图）。
-class _BaseConvertTab extends StatefulWidget {
-  const _BaseConvertTab();
+/// 页面：多种进制互转（BigInt 大整数 + 可选补码 + 字节视图）。
+class _BaseConvertPage extends StatefulWidget {
+  const _BaseConvertPage();
 
   @override
-  State<_BaseConvertTab> createState() => _BaseConvertTabState();
+  State<_BaseConvertPage> createState() => _BaseConvertPageState();
 }
 
-class _BaseConvertTabState extends State<_BaseConvertTab> {
+class _BaseConvertPageState extends State<_BaseConvertPage> {
   final _bin = TextEditingController();
   final _oct = TextEditingController();
   final _dec = TextEditingController();
@@ -229,152 +296,155 @@ class _BaseConvertTabState extends State<_BaseConvertTab> {
     final byteView = bytes
         .map((b) => b.toRadixString(16).padLeft(2, '0').toUpperCase())
         .join(' ');
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: SwitchListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('有符号（补码）',
-                            style: TextStyle(fontWeight: FontWeight.bold)),
-                        value: _signed,
+    return Scaffold(
+      appBar: AppBar(title: const Text('进制转换')),
+      bottomNavigationBar: const _BaseQuickBar(currentIndex: 0),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('有符号（补码）',
+                              style: TextStyle(fontWeight: FontWeight.bold)),
+                          value: _signed,
+                          onChanged: (v) {
+                            setState(() {
+                              _signed = v;
+                              // 切回无符号时若当前为负值，取其绝对值避免显示负数
+                              if (!v && _signedValue < BigInt.zero) {
+                                _signedValue = -_signedValue;
+                              }
+                              _pushToAllExcept(_dummy);
+                              _err = null;
+                            });
+                          },
+                        ),
+                      ),
+                      DropdownButton<int>(
+                        value: _width,
+                        isDense: true,
+                        items: const [
+                          DropdownMenuItem(value: 8, child: Text('8 位')),
+                          DropdownMenuItem(value: 16, child: Text('16 位')),
+                          DropdownMenuItem(value: 32, child: Text('32 位')),
+                          DropdownMenuItem(value: 64, child: Text('64 位')),
+                        ],
                         onChanged: (v) {
+                          if (v == null) return;
                           setState(() {
-                            _signed = v;
-                            // 切回无符号时若当前为负值，取其绝对值避免显示负数
-                            if (!v && _signedValue < BigInt.zero) {
-                              _signedValue = -_signedValue;
-                            }
+                            _width = v;
                             _pushToAllExcept(_dummy);
                             _err = null;
                           });
                         },
                       ),
-                    ),
-                    DropdownButton<int>(
-                      value: _width,
-                      isDense: true,
-                      items: const [
-                        DropdownMenuItem(value: 8, child: Text('8 位')),
-                        DropdownMenuItem(value: 16, child: Text('16 位')),
-                        DropdownMenuItem(value: 32, child: Text('32 位')),
-                        DropdownMenuItem(value: 64, child: Text('64 位')),
-                      ],
-                      onChanged: (v) {
-                        if (v == null) return;
-                        setState(() {
-                          _width = v;
-                          _pushToAllExcept(_dummy);
-                          _err = null;
-                        });
-                      },
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                const Text('任意编辑一个框，其余自动换算（支持 0x/0o/0b 前缀）',
-                    style: TextStyle(fontSize: 12, color: Colors.grey)),
-                const SizedBox(height: 8),
-                _Field(
-                  label: '二进制 (BIN)',
-                  controller: _bin,
-                  onChanged: (t) => _setFrom(t, 2, false),
-                  onCopy: () => _copy(_bin.text),
-                  hint: '如 1010',
-                ),
-                const SizedBox(height: 8),
-                _Field(
-                  label: '八进制 (OCT)',
-                  controller: _oct,
-                  onChanged: (t) => _setFrom(t, 8, false),
-                  onCopy: () => _copy(_oct.text),
-                  hint: '如 12',
-                ),
-                const SizedBox(height: 8),
-                _Field(
-                  label: '十进制 (DEC)',
-                  controller: _dec,
-                  onChanged: (t) => _setFrom(t, 10, true),
-                  onCopy: () => _copy(_dec.text),
-                  hint: '如 10（可带负号）',
-                ),
-                const SizedBox(height: 8),
-                _Field(
-                  label: '十六进制 (HEX)',
-                  controller: _hex,
-                  onChanged: (t) => _setFrom(t, 16, false),
-                  onCopy: () => _copy(_hex.text),
-                  hint: '如 A（或 0xA）',
-                ),
-                if (_err != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 6),
-                    child: Text(_err!,
-                        style: const TextStyle(color: Colors.red, fontSize: 12)),
+                    ],
                   ),
-              ],
+                  const SizedBox(height: 4),
+                  const Text('任意编辑一个框，其余自动换算（支持 0x/0o/0b 前缀）',
+                      style: TextStyle(fontSize: 12, color: Colors.grey)),
+                  const SizedBox(height: 8),
+                  _Field(
+                    label: '二进制 (BIN)',
+                    controller: _bin,
+                    onChanged: (t) => _setFrom(t, 2, false),
+                    onCopy: () => _copy(_bin.text),
+                    hint: '如 1010',
+                  ),
+                  const SizedBox(height: 8),
+                  _Field(
+                    label: '八进制 (OCT)',
+                    controller: _oct,
+                    onChanged: (t) => _setFrom(t, 8, false),
+                    onCopy: () => _copy(_oct.text),
+                    hint: '如 12',
+                  ),
+                  const SizedBox(height: 8),
+                  _Field(
+                    label: '十进制 (DEC)',
+                    controller: _dec,
+                    onChanged: (t) => _setFrom(t, 10, true),
+                    onCopy: () => _copy(_dec.text),
+                    hint: '如 10（可带负号）',
+                  ),
+                  const SizedBox(height: 8),
+                  _Field(
+                    label: '十六进制 (HEX)',
+                    controller: _hex,
+                    onChanged: (t) => _setFrom(t, 16, false),
+                    onCopy: () => _copy(_hex.text),
+                    hint: '如 A（或 0xA）',
+                  ),
+                  if (_err != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text(_err!,
+                          style: const TextStyle(color: Colors.red, fontSize: 12)),
+                    ),
+                ],
+              ),
             ),
           ),
-        ),
-        const SizedBox(height: 12),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const Expanded(
-                      child: Text('字节视图（大端）',
-                          style: TextStyle(fontWeight: FontWeight.bold)),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.copy, size: 18),
-                      tooltip: '复制字节视图',
-                      onPressed: () => _copy(byteView),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Colors.purple.shade50,
-                    borderRadius: BorderRadius.circular(8),
+          const SizedBox(height: 12),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text('字节视图（大端）',
+                            style: TextStyle(fontWeight: FontWeight.bold)),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.copy, size: 18),
+                        tooltip: '复制字节视图',
+                        onPressed: () => _copy(byteView),
+                      ),
+                    ],
                   ),
-                  child: SelectableText(
-                    byteView.isEmpty ? '00' : byteView,
-
-                    style: const TextStyle(fontFamily: 'monospace', fontSize: 14),
+                  const SizedBox(height: 6),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.purple.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: SelectableText(
+                      byteView.isEmpty ? '00' : byteView,
+                      style: const TextStyle(fontFamily: 'monospace', fontSize: 14),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  _signed
-                      ? '位宽 $_width · ${_width ~/ 8} 字节 · 有符号补码'
-                      : '无符号 · ${bytes.length} 字节',
-                  style: const TextStyle(fontSize: 12, color: Colors.grey),
-                ),
-              ],
+                  const SizedBox(height: 6),
+                  Text(
+                    _signed
+                        ? '位宽 $_width · ${_width ~/ 8} 字节 · 有符号补码'
+                        : '无符号 · ${bytes.length} 字节',
+                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
 
-/// 进制转换 Tab 中单个进制输入框。
+/// 进制转换页中单个进制输入框。
 class _Field extends StatelessWidget {
   const _Field({
     required this.label,
@@ -409,15 +479,15 @@ class _Field extends StatelessWidget {
   }
 }
 
-/// Tab 1：文本 ↔ 十六进制。
-class _TextHexTab extends StatefulWidget {
-  const _TextHexTab();
+/// 页面：文本 ↔ 十六进制。
+class _TextHexPage extends StatefulWidget {
+  const _TextHexPage();
 
   @override
-  State<_TextHexTab> createState() => _TextHexTabState();
+  State<_TextHexPage> createState() => _TextHexPageState();
 }
 
-class _TextHexTabState extends State<_TextHexTab> {
+class _TextHexPageState extends State<_TextHexPage> {
   final _textCtl = TextEditingController();
   final _hexCtl = TextEditingController();
   String? _hexErr;
@@ -454,84 +524,88 @@ class _TextHexTabState extends State<_TextHexTab> {
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('文本 → 十六进制 (UTF-8)',
-                    style: TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _textCtl,
-                  maxLines: 3,
-                  decoration: const InputDecoration(
-                    labelText: '文本',
-                    isDense: true,
+    return Scaffold(
+      appBar: AppBar(title: const Text('文本⇄Hex')),
+      bottomNavigationBar: const _BaseQuickBar(currentIndex: 1),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('文本 → 十六进制 (UTF-8)',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _textCtl,
+                    maxLines: 3,
+                    decoration: const InputDecoration(
+                      labelText: '文本',
+                      isDense: true,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 8),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: FilledButton(
-                      onPressed: _textToHex, child: const Text('转换')),
-                ),
-              ],
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: FilledButton(
+                        onPressed: _textToHex, child: const Text('转换')),
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
-        const SizedBox(height: 12),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('十六进制 → 文本 (UTF-8)',
-                    style: TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _hexCtl,
-                  maxLines: 3,
-                  decoration: const InputDecoration(
-                    labelText: '十六进制（空格分隔，如 48 65 6C 6C 6F）',
-                    isDense: true,
+          const SizedBox(height: 12),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('十六进制 → 文本 (UTF-8)',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _hexCtl,
+                    maxLines: 3,
+                    decoration: const InputDecoration(
+                      labelText: '十六进制（空格分隔，如 48 65 6C 6C 6F）',
+                      isDense: true,
+                    ),
                   ),
-                ),
-                if (_hexErr != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 6),
-                    child: Text(_hexErr!,
-                        style: const TextStyle(color: Colors.red, fontSize: 12)),
+                  if (_hexErr != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text(_hexErr!,
+                          style: const TextStyle(color: Colors.red, fontSize: 12)),
+                    ),
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: FilledButton(
+                        onPressed: _hexToText, child: const Text('转换')),
                   ),
-                const SizedBox(height: 8),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: FilledButton(
-                      onPressed: _hexToText, child: const Text('转换')),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
 
-/// Tab 2：大小端转换（16/32/64 位）。
-class _EndianTab extends StatefulWidget {
-  const _EndianTab();
+/// 页面：大小端转换（16/32/64 位）。
+class _EndianPage extends StatefulWidget {
+  const _EndianPage();
 
   @override
-  State<_EndianTab> createState() => _EndianTabState();
+  State<_EndianPage> createState() => _EndianPageState();
 }
 
-class _EndianTabState extends State<_EndianTab> {
+class _EndianPageState extends State<_EndianPage> {
   final _ctl = TextEditingController();
   String? _result;
   String? _err;
@@ -567,85 +641,89 @@ class _EndianTabState extends State<_EndianTab> {
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('字节序翻转（大小端互换）',
-                    style: TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 8),
-                DropdownButtonFormField<int>(
-                  value: _width,
-                  isDense: true,
-                  decoration: const InputDecoration(
-                    labelText: '位宽',
+    return Scaffold(
+      appBar: AppBar(title: const Text('大小端')),
+      bottomNavigationBar: const _BaseQuickBar(currentIndex: 2),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('字节序翻转（大小端互换）',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<int>(
+                    value: _width,
                     isDense: true,
-                  ),
-                  items: const [
-                    DropdownMenuItem(value: 16, child: Text('16 位 (2 字节)')),
-                    DropdownMenuItem(value: 32, child: Text('32 位 (4 字节)')),
-                    DropdownMenuItem(value: 64, child: Text('64 位 (8 字节)')),
-                  ],
-                  onChanged: (v) => setState(() => _width = v ?? _width),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _ctl,
-                  decoration: const InputDecoration(
-                    labelText: '原始字节（Hex）',
-                    hintText: '如 01 02 03 04',
-                    isDense: true,
-                  ),
-                ),
-                if (_err != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 6),
-                    child: Text(_err!,
-                        style: const TextStyle(color: Colors.red, fontSize: 12)),
-                  ),
-                const SizedBox(height: 8),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: FilledButton(
-                      onPressed: _convert, child: const Text('翻转')),
-                ),
-                if (_result != null) ...[
-                  const SizedBox(height: 10),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Colors.teal.shade50,
-                      borderRadius: BorderRadius.circular(8),
+                    decoration: const InputDecoration(
+                      labelText: '位宽',
+                      isDense: true,
                     ),
-                    child: SelectableText('结果：$_result',
-                        style: const TextStyle(
-                            fontFamily: 'monospace', fontSize: 14)),
+                    items: const [
+                      DropdownMenuItem(value: 16, child: Text('16 位 (2 字节)')),
+                      DropdownMenuItem(value: 32, child: Text('32 位 (4 字节)')),
+                      DropdownMenuItem(value: 64, child: Text('64 位 (8 字节)')),
+                    ],
+                    onChanged: (v) => setState(() => _width = v ?? _width),
                   ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _ctl,
+                    decoration: const InputDecoration(
+                      labelText: '原始字节（Hex）',
+                      hintText: '如 01 02 03 04',
+                      isDense: true,
+                    ),
+                  ),
+                  if (_err != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text(_err!,
+                          style: const TextStyle(color: Colors.red, fontSize: 12)),
+                    ),
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: FilledButton(
+                        onPressed: _convert, child: const Text('翻转')),
+                  ),
+                  if (_result != null) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.teal.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: SelectableText('结果：$_result',
+                          style: const TextStyle(
+                              fontFamily: 'monospace', fontSize: 14)),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
 
-/// Tab 3：浮点数(IEEE754 FLOAT32) 解析。
-class _FloatTab extends StatefulWidget {
-  const _FloatTab();
+/// 页面：浮点数(IEEE754 FLOAT32) 解析。
+class _FloatPage extends StatefulWidget {
+  const _FloatPage();
 
   @override
-  State<_FloatTab> createState() => _FloatTabState();
+  State<_FloatPage> createState() => _FloatPageState();
 }
 
-class _FloatTabState extends State<_FloatTab> {
+class _FloatPageState extends State<_FloatPage> {
   final _ctl = TextEditingController();
   String? _result;
   String? _err;
@@ -680,73 +758,77 @@ class _FloatTabState extends State<_FloatTab> {
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('IEEE754 FLOAT32 解析',
-                    style: TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 6),
-                const Text('输入 4 字节（两寄存器拼成），按大小端解析为浮点。',
-                    style: TextStyle(fontSize: 12, color: Colors.grey)),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _ctl,
-                  decoration: const InputDecoration(
-                    labelText: '4 字节 Hex',
-                    hintText: '如 42 48 00 00',
-                    isDense: true,
-                  ),
-                ),
-                if (_err != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 6),
-                    child: Text(_err!,
-                        style: const TextStyle(color: Colors.red, fontSize: 12)),
-                  ),
-                const SizedBox(height: 8),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: FilledButton(
-                      onPressed: _parse, child: const Text('解析')),
-                ),
-                if (_result != null) ...[
-                  const SizedBox(height: 10),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Colors.teal.shade50,
-                      borderRadius: BorderRadius.circular(8),
+    return Scaffold(
+      appBar: AppBar(title: const Text('浮点')),
+      bottomNavigationBar: const _BaseQuickBar(currentIndex: 3),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('IEEE754 FLOAT32 解析',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 6),
+                  const Text('输入 4 字节（两寄存器拼成），按大小端解析为浮点。',
+                      style: TextStyle(fontSize: 12, color: Colors.grey)),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _ctl,
+                    decoration: const InputDecoration(
+                      labelText: '4 字节 Hex',
+                      hintText: '如 42 48 00 00',
+                      isDense: true,
                     ),
-                    child: SelectableText(_result!,
-                        style: const TextStyle(
-                            fontFamily: 'monospace', fontSize: 14)),
                   ),
+                  if (_err != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text(_err!,
+                          style: const TextStyle(color: Colors.red, fontSize: 12)),
+                    ),
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: FilledButton(
+                        onPressed: _parse, child: const Text('解析')),
+                  ),
+                  if (_result != null) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.teal.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: SelectableText(_result!,
+                          style: const TextStyle(
+                              fontFamily: 'monospace', fontSize: 14)),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
 
-/// Tab 4：CRC16-Modbus 计算。
-class _CrcTab extends StatefulWidget {
-  const _CrcTab();
+/// 页面：CRC16-Modbus 计算。
+class _CrcPage extends StatefulWidget {
+  const _CrcPage();
 
   @override
-  State<_CrcTab> createState() => _CrcTabState();
+  State<_CrcPage> createState() => _CrcPageState();
 }
 
-class _CrcTabState extends State<_CrcTab> {
+class _CrcPageState extends State<_CrcPage> {
   final _ctl = TextEditingController();
   String? _result;
   String? _err;
@@ -798,61 +880,65 @@ class _CrcTabState extends State<_CrcTab> {
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('CRC16-Modbus 校验',
-                    style: TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 6),
-                const Text('多项式 0x8005 · 初始 0xFFFF · 反射 · 异或 0',
-                    style: TextStyle(fontSize: 12, color: Colors.grey)),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _ctl,
-                  maxLines: 3,
-                  decoration: const InputDecoration(
-                    labelText: '报文（Hex，不含 CRC 本身）',
-                    hintText: '如 01 03 00 00 00 01',
-                    isDense: true,
-                  ),
-                ),
-                if (_err != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 6),
-                    child: Text(_err!,
-                        style: const TextStyle(color: Colors.red, fontSize: 12)),
-                  ),
-                const SizedBox(height: 8),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: FilledButton(
-                      onPressed: _calc, child: const Text('计算')),
-                ),
-                if (_result != null) ...[
-                  const SizedBox(height: 10),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Colors.teal.shade50,
-                      borderRadius: BorderRadius.circular(8),
+    return Scaffold(
+      appBar: AppBar(title: const Text('CRC16')),
+      bottomNavigationBar: const _BaseQuickBar(currentIndex: 4),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('CRC16-Modbus 校验',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 6),
+                  const Text('多项式 0x8005 · 初始 0xFFFF · 反射 · 异或 0',
+                      style: TextStyle(fontSize: 12, color: Colors.grey)),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _ctl,
+                    maxLines: 3,
+                    decoration: const InputDecoration(
+                      labelText: '报文（Hex，不含 CRC 本身）',
+                      hintText: '如 01 03 00 00 00 01',
+                      isDense: true,
                     ),
-                    child: SelectableText(_result!,
-                        style: const TextStyle(
-                            fontFamily: 'monospace', fontSize: 14)),
                   ),
+                  if (_err != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text(_err!,
+                          style: const TextStyle(color: Colors.red, fontSize: 12)),
+                    ),
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: FilledButton(
+                        onPressed: _calc, child: const Text('计算')),
+                  ),
+                  if (_result != null) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.teal.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: SelectableText(_result!,
+                          style: const TextStyle(
+                              fontFamily: 'monospace', fontSize: 14)),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
