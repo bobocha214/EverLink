@@ -30,7 +30,7 @@ jobs:
       - name: Accept licenses & install SDK platform 36
         run: |
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses || true
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0" "ndk;28.2.13676358"
 
       - name: Setup Flutter (3.44.1)
         uses: subosito/flutter-action@v2
