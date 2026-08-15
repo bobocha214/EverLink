@@ -53,6 +53,25 @@ jobs:
       - name: Flutter pub get
         run: flutter pub get
 
+      # clipboard_watcher 0.3.0 在 android/build.gradle 写死 compileSdk 33，
+      # 但其 AndroidX 依赖要求 compileSdk >= 34，CI 全新拉取的 pub 缓存会触发
+      # :clipboard_watcher:check*AarMetadata 失败（本地已手动把该文件改成 36）。
+      # 这里在 pub get 之后、构建之前用 sed 把插件工程的 compileSdk 同步到 36（与 App 对齐）。
+      # App 使用 AGP 9.0.1，支持 compileSdk 36，提升后元数据检查通过。
+      - name: Patch clipboard_watcher compileSdk (CI 全新 pub 缓存写死 33)
+        shell: bash
+        run: |
+          mapfile -t FILES < <(find "$HOME/.pub-cache" -type f -path '*clipboard_watcher-*/android/build.gradle' 2>/dev/null)
+          if [ "${#FILES[@]}" -eq 0 ]; then
+            echo "::warning::clipboard_watcher build.gradle not found in pub cache, skip patch"
+            exit 0
+          fi
+          for f in "${FILES[@]}"; do
+            echo "Patching $f"
+            sed -i -E 's/(compileSdkVersion|compileSdk[[:space:]]*=[[:space:]]*)[[:space:]]*[0-9]+/\1 36/' "$f"
+            grep -n "compileSdk" "$f" || true
+          done
+
       - name: Build release APK
         run: flutter build apk --release
 
