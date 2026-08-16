@@ -75,10 +75,15 @@ android {
 // variant API，改用 assembleRelease 之后的重命名任务：
 //   通用包 app-release.apk               -> EverLink-<ver>.apk
 //   按 ABI 拆分 app-<abi>-release.apk    -> EverLink-<ver>-<abi>.apk
+// 注意：Flutter Gradle 插件把 APK 输出到 **Flutter 项目根**的 build/ 目录
+// （即仓库根 build/app/outputs/flutter-apk/），而非 :app 模块的 build/
+// （android/app/build/）。layout.buildDirectory 指向后者，导致重命名任务找不到 APK。
+// 用 rootProject.projectDir.parentFile（= 仓库根）定位正确的输出目录。
 val everlinkApkVersion: String = flutter.versionName
 tasks.register("renameEverLinkApk") {
     doLast {
-        val outDir = File(layout.buildDirectory.get().asFile, "app/outputs/flutter-apk")
+        val flutterRoot = rootProject.projectDir.parentFile
+        val outDir = File(flutterRoot, "build/app/outputs/flutter-apk")
         if (outDir.isDirectory) {
             outDir.listFiles { f -> f.extension == "apk" }?.forEach { apk ->
                 val newName = when (val n = apk.name) {

@@ -102,15 +102,15 @@ jobs:
         run: flutter build apk --release
 
       - name: List built APKs (diagnostic)
-        run: find android -name '*.apk' -print
+        run: find build -name '*.apk' -print
 
       - name: Publish to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           # 自动从本次 tag 的提交生成更新说明（UpdateService 会作为 notes 展示）
           generate_release_notes: true
-          # 注意 APK 实际位于 android/app/build/.../flutter-apk/（Flutter 把 :app 模块的
-          # build 目录放在 android/app/build，而非仓库根的 build/）。用 ** 跨目录通配匹配。
-          files: android/**/EverLink-*.apk
+          # Flutter Gradle 插件把 APK 输出到仓库根的 build/app/outputs/flutter-apk/，
+          # 不是 android/app/build/。renameEverLinkApk 任务在此目录重命名为 EverLink-*.apk。
+          files: build/app/outputs/flutter-apk/EverLink-*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
