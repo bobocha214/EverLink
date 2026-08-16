@@ -55,6 +55,12 @@ jobs:
           # storeFile 相对于 :app 模块(android/app/) 解析，故最终 keystore 落到 android/app/。
           # 1) 解码（去 CRLF 防损坏）到临时源文件
           printf '%s' "${{ secrets.KEYSTORE_BASE64 }}" | tr -d '\r' | base64 -d > app/_src-key.jks
+          # 快速失败守卫：若 KEYSTORE_BASE64 为空（Secret 未设置 / fork PR 运行不注入 Secret），
+          # 解码出的文件是 0 字节，keytool 会报无意义的 ASN.1 错误。提前给出明确提示。
+          if [ ! -s app/_src-key.jks ]; then
+            echo "::error::解码后的 keystore 为空（0 字节）。请确认仓库 Settings → Secrets and variables → Actions 已设置 KEYSTORE_BASE64（以及 KEYSTORE_PASSWORD / KEY_PASSWORD / KEY_ALIAS 三个）。注意：fork 的 PR 运行不会注入仓库 Secrets，必须从主仓库打 tag 触发。"
+            exit 1
+          fi
           # 2) 校验源 keystore 可被 JDK21 keytool 读取（区分“解码损坏”vs“格式不兼容”）
           keytool -list -keystore app/_src-key.jks -storepass "${{ secrets.KEYSTORE_PASSWORD }}" >/dev/null
           # 3) 用 JDK21 keytool 把同一密钥重写成 AGP 自带 BouncyCastle 能读的 PKCS12。
