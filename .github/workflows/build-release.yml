@@ -54,7 +54,12 @@ jobs:
           # key.properties 由 Gradle 在 rootProject(android/) 读取；
           # 但 storeFile 是相对于 :app 模块(android/app/) 解析的，
           # 所以 keystore 必须落到 android/app/ 下，否则 validateSigningRelease 报 not found。
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > app/everlink-release-key.jks
+          # 用 printf+tr 去除 base64 中可能混入的回车，避免解码损坏。
+          printf '%s' "${{ secrets.KEYSTORE_BASE64 }}" | tr -d '\r' | base64 -d > app/everlink-release-key.jks
+          # 预校验：若此处报 “invalid”/“integrity” 等，说明 base64 解码损坏或密钥内容有误；
+          # 若此处通过但后面 apksigner 仍报 “Tag number over 30”，则是 JDK17+ PKCS12 的
+          # HmacPBESHA256 MAC 与 AGP 自带 BouncyCastle 不兼容，需本地转档（见说明）。
+          keytool -list -keystore app/everlink-release-key.jks -storepass "${{ secrets.KEYSTORE_PASSWORD }}" >/dev/null
           cat > key.properties <<'EOF'
           storePassword=${{ secrets.KEYSTORE_PASSWORD }}
           keyPassword=${{ secrets.KEY_PASSWORD }}
