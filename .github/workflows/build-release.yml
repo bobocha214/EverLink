@@ -48,18 +48,30 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Decode keystore & write key.properties
+      - name: Decode & convert keystore (AGP-compatible PKCS12)
         run: |
           cd android
           # key.properties 由 Gradle 在 rootProject(android/) 读取；
-          # 但 storeFile 是相对于 :app 模块(android/app/) 解析的，
-          # 所以 keystore 必须落到 android/app/ 下，否则 validateSigningRelease 报 not found。
-          # 用 printf+tr 去除 base64 中可能混入的回车，避免解码损坏。
-          printf '%s' "${{ secrets.KEYSTORE_BASE64 }}" | tr -d '\r' | base64 -d > app/everlink-release-key.jks
-          # 预校验：若此处报 “invalid”/“integrity” 等，说明 base64 解码损坏或密钥内容有误；
-          # 若此处通过但后面 apksigner 仍报 “Tag number over 30”，则是 JDK17+ PKCS12 的
-          # HmacPBESHA256 MAC 与 AGP 自带 BouncyCastle 不兼容，需本地转档（见说明）。
-          keytool -list -keystore app/everlink-release-key.jks -storepass "${{ secrets.KEYSTORE_PASSWORD }}" >/dev/null
+          # storeFile 相对于 :app 模块(android/app/) 解析，故最终 keystore 落到 android/app/。
+          # 1) 解码（去 CRLF 防损坏）到临时源文件
+          printf '%s' "${{ secrets.KEYSTORE_BASE64 }}" | tr -d '\r' | base64 -d > app/_src-key.jks
+          # 2) 校验源 keystore 可被 JDK21 keytool 读取（区分“解码损坏”vs“格式不兼容”）
+          keytool -list -keystore app/_src-key.jks -storepass "${{ secrets.KEYSTORE_PASSWORD }}" >/dev/null
+          # 3) 用 JDK21 keytool 把同一密钥重写成 AGP 自带 BouncyCastle 能读的 PKCS12。
+          #    JDK17+ 默认 PKCS12 用 HmacPBESHA256 做 MAC，会让 apksigner 报
+          #    “Tag number over 30 is not supported”；强制 HmacPBESHA1 即兼容。
+          #    密钥/证书不变，已发布 App 的更新签名不受影响。
+          keytool -importkeystore -noprompt \
+            -srckeystore app/_src-key.jks \
+            -srcstorepass "${{ secrets.KEYSTORE_PASSWORD }}" \
+            -srcalias "${{ secrets.KEY_ALIAS }}" \
+            -destkeystore app/everlink-release-key.jks \
+            -deststorepass "${{ secrets.KEYSTORE_PASSWORD }}" \
+            -destkeypass "${{ secrets.KEY_PASSWORD }}" \
+            -destalias "${{ secrets.KEY_ALIAS }}" \
+            -deststoretype PKCS12 \
+            -J-Dkeystore.pkcs12.macAlgorithm=HmacPBESHA1
+          rm -f app/_src-key.jks
           cat > key.properties <<'EOF'
           storePassword=${{ secrets.KEYSTORE_PASSWORD }}
           keyPassword=${{ secrets.KEY_PASSWORD }}
