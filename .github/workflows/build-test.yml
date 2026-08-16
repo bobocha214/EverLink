@@ -5,7 +5,24 @@ name: Build Test APK
 on:
   push:
     branches: [main]
+    # 仅改动文档/图片时不触发 Android 构建（参考 juejin.cn/post/7080764562609274916 的 paths-ignore 实践）
+    paths-ignore:
+      - '**/*.md'
+      - '**/*.txt'
+      - '**/*.png'
+      - '**/*.jpg'
+      - '**/*.jpeg'
+      - 'docs/**'
+      - 'README.md'
   pull_request:
+    paths-ignore:
+      - '**/*.md'
+      - '**/*.txt'
+      - '**/*.png'
+      - '**/*.jpg'
+      - '**/*.jpeg'
+      - 'docs/**'
+      - 'README.md'
 
 jobs:
   build:

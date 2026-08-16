@@ -7,6 +7,15 @@ on:
   push:
     tags:
       - '*'
+    # 仅改动文档/图片时不为该 tag 触发整条构建（参考 juejin.cn/post/7080764562609274916）
+    paths-ignore:
+      - '**/*.md'
+      - '**/*.txt'
+      - '**/*.png'
+      - '**/*.jpg'
+      - '**/*.jpeg'
+      - 'docs/**'
+      - 'README.md'
 
 permissions:
   contents: write   # 允许 action-gh-release 创建/更新 Release
@@ -42,7 +51,10 @@ jobs:
       - name: Decode keystore & write key.properties
         run: |
           cd android
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > everlink-release-key.jks
+          # key.properties 由 Gradle 在 rootProject(android/) 读取；
+          # 但 storeFile 是相对于 :app 模块(android/app/) 解析的，
+          # 所以 keystore 必须落到 android/app/ 下，否则 validateSigningRelease 报 not found。
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > app/everlink-release-key.jks
           cat > key.properties <<'EOF'
           storePassword=${{ secrets.KEYSTORE_PASSWORD }}
           keyPassword=${{ secrets.KEY_PASSWORD }}
