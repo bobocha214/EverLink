@@ -79,6 +79,13 @@ android {
 // （即仓库根 build/app/outputs/flutter-apk/），而非 :app 模块的 build/
 // （android/app/build/）。layout.buildDirectory 指向后者，导致重命名任务找不到 APK。
 // 用 rootProject.projectDir.parentFile（= 仓库根）定位正确的输出目录。
+//
+// ⚠️ 关键：flutter build apk 在 Gradle 跑完后，会**按固定文件名** app-release.apk
+// 检查产物是否存在（flutter_tools 的 listApkPaths 只认 app-release.apk，不 glob）。
+// 若此处用 renameTo 把 app-release.apk 改名移走，Flutter 收尾检查找不到它，会报
+// "Gradle build failed to produce an .apk file" 并以 exit 1 失败——而 Gradle 本身
+// 其实是成功的（所以看不到 "assembleRelease failed"）。因此这里**只复制、不移动**，
+// 保留 app-release.apk 供 Flutter 检测，同时额外产出 EverLink-*.apk 供发布使用。
 val everlinkApkVersion: String = flutter.versionName
 tasks.register("renameEverLinkApk") {
     doLast {
@@ -95,7 +102,8 @@ tasks.register("renameEverLinkApk") {
                         else n
                 }
                 val target = File(outDir, newName)
-                if (!target.exists()) apk.renameTo(target)
+                // 复制而非移动：保留原始 app-release.apk，避免破坏 flutter build apk 的产物检测。
+                if (!target.exists()) apk.copyTo(target, overwrite = true)
             }
         }
     }
