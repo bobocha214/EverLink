@@ -50,6 +50,7 @@ jobs:
 
       - name: Decode & convert keystore (AGP-compatible PKCS12)
         run: |
+          set -euo pipefail
           cd android
           # key.properties 由 Gradle 在 rootProject(android/) 读取；
           # storeFile 相对于 :app 模块(android/app/) 解析，故最终 keystore 落到 android/app/。
@@ -67,6 +68,7 @@ jobs:
           #    JDK17+ 默认 PKCS12 用 HmacPBESHA256 做 MAC，会让 apksigner 报
           #    “Tag number over 30 is not supported”；强制 HmacPBESHA1 即兼容。
           #    密钥/证书不变，已发布 App 的更新签名不受影响。
+          #    注意：源若是 JKS 也能正确转写（keytool 按扩展名推断 store type）。
           keytool -importkeystore -noprompt \
             -srckeystore app/_src-key.jks \
             -srcstorepass "${{ secrets.KEYSTORE_PASSWORD }}" \
@@ -78,6 +80,14 @@ jobs:
             -deststoretype PKCS12 \
             -J-Dkeystore.pkcs12.macAlgorithm=HmacPBESHA1
           rm -f app/_src-key.jks
+          # 4) 校验产物 keystore 存在且可被读取；转换任何环节出问题这里会立刻失败，
+          #    而不是等到 284s 后的 :app:packageRelease 才炸（那时只会看到 “couldn't find APK”）。
+          if [ ! -s app/everlink-release-key.jks ]; then
+            echo "::error::转换后的 keystore 为空，keytool 转换未产出文件。请检查 KEY_ALIAS / 各密码 Secret 是否正确。"
+            exit 1
+          fi
+          keytool -list -keystore app/everlink-release-key.jks -storepass "${{ secrets.KEYSTORE_PASSWORD }}" >/dev/null \
+            && echo "::notice::keystore 转换成功且可被 JDK 读取"
           cat > key.properties <<'EOF'
           storePassword=${{ secrets.KEYSTORE_PASSWORD }}
           keyPassword=${{ secrets.KEY_PASSWORD }}
@@ -101,8 +111,19 @@ jobs:
       - name: Build release APK
         run: flutter build apk --release
 
-      - name: List built APKs (diagnostic)
-        run: find build -name '*.apk' -print
+      # 无论构建成功或失败都执行的诊断：把 APK 实际落点、keystore、key.properties
+      # 打印出来，方便从日志一眼定位 “couldn't find APK” 的真因（真实 Gradle 报错
+      # 通常在本步骤之上的构建日志里，关键词：FAILURE / What went wrong /
+      # Execution failed for task ':app:packageRelease' / Tag number over 30）。
+      - name: Diagnostics — locate APK & inspect keystore
+        if: always()
+        run: |
+          echo "== any *.apk anywhere in repo =="
+          find . -name '*.apk' -print 2>/dev/null || true
+          echo "== keystore files =="
+          ls -la android/app/*.jks 2>/dev/null || echo "no .jks in android/app"
+          echo "== key.properties =="
+          cat android/key.properties 2>/dev/null || echo "no key.properties"
 
       - name: Publish to GitHub Release
         uses: softprops/action-gh-release@v2
