@@ -64,7 +64,6 @@ class _ModbusPageState extends State<ModbusPage> {
   StreamSubscription<DeviceConnectionState>? _cmSub;
 
   final List<String> _log = <String>[];
-  final List<double> _history = <double>[];
   Timer? _pollTimer;
   bool _polling = false;
   final _pollIntervalCtl = TextEditingController(text: '1000');
@@ -251,25 +250,19 @@ class _ModbusPageState extends State<ModbusPage> {
     final out = <String>[];
     final pts = <_ModbusPoint>[];
     final step = _dataType.registerCount;
-    num? first;
     for (var i = 0; i + step <= regs.length; i += step) {
       final v = parseModbusValue(regs, _dataType,
           start: i, order: order);
       final tag = '${addr + i}';
       out.add('[$tag] ${_dataType.label} = $v');
       pts.add(_ModbusPoint(address: addr + i, value: v ?? 0, type: _dataType.label));
-      if (first == null && v != null) first = v;
-      // 写入数据点总线，驱动内嵌可视化（趋势 / 仪表盘）
+      // 写入数据点总线，驱动单点位监控页可视化
       DataPointBus.instance.emit(DataPoint(
         source: 'modbus',
         tag: tag,
         value: v ?? 0,
         time: DateTime.now(),
       ));
-    }
-    if (first != null) {
-      _history.add(first.toDouble());
-      if (_history.length > 300) _history.removeAt(0);
     }
     _addLog('[读] ${regs.length} 寄存器 → ${out.length} 值');
     _points = pts;
@@ -539,13 +532,6 @@ class _ModbusPageState extends State<ModbusPage> {
                   ),
                 ],
               ),
-              if (_history.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                const Text('实时趋势（首个解析值）',
-                    style: TextStyle(fontSize: 12, color: Colors.grey)),
-                const SizedBox(height: 4),
-                SizedBox(height: 80, child: _Sparkline(points: _history)),
-              ],
             ],
           ),
         ),
@@ -814,54 +800,6 @@ class _ModbusPageState extends State<ModbusPage> {
           ),
         ),
       );
-}
-
-/// 轻量趋势迷你曲线（实时数据可视化占位，模块九 会扩展为完整趋势图）。
-class _Sparkline extends StatelessWidget {
-  final List<double> points;
-  const _Sparkline({required this.points});
-
-  @override
-  Widget build(BuildContext context) {
-    if (points.isEmpty) {
-      return const Center(child: Text('无数据', style: TextStyle(color: Colors.grey)));
-    }
-    return CustomPaint(
-      size: const Size(double.infinity, 80),
-      painter: _SparklinePainter(points),
-    );
-  }
-}
-
-class _SparklinePainter extends CustomPainter {
-  final List<double> points;
-  _SparklinePainter(this.points);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final min = points.reduce((a, b) => a < b ? a : b);
-    final max = points.reduce((a, b) => a > b ? a : b);
-    final range = (max - min) == 0 ? 1.0 : (max - min);
-    final dx = size.width / (points.length - 1).clamp(1, 10000);
-    final paint = Paint()
-      ..color = Colors.teal
-      ..strokeWidth = 2
-      ..style = PaintingStyle.stroke;
-    final path = Path();
-    for (var i = 0; i < points.length; i++) {
-      final x = i * dx;
-      final y = size.height - ((points[i] - min) / range) * size.height;
-      if (i == 0) {
-        path.moveTo(x, y);
-      } else {
-        path.lineTo(x, y);
-      }
-    }
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter old) => true;
 }
 
 /// 读取得到的单个 Modbus 点位（地址 + 当前值 + 数据类型），用于「点位列表」中的行内写入。
