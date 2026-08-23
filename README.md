@@ -74,6 +74,16 @@ EverLink 把现场最常用的多种工业通信协议、网络诊断能力和�
 
 ---
 
+## 📱 应用截图
+
+<div align="center">
+  <img src="assets/app/Screenshot_2026-08-23-22-25-46-413_com.everlink.app.jpg" width="320" alt="设备调试首页：设备列表与状态统计" />
+  <img src="assets/app/Screenshot_2026-08-23-22-25-51-757_com.everlink.app.jpg" width="320" alt="工具箱：快传、剪贴板、网络调试、进制工具、服务模拟入口" />
+  <p><em>左：设备调试首页；右：工具箱</em></p>
+</div>
+
+---
+
 ## 🧱 技术架构
 
 项目采用分层设计，降低各协议模块之间的耦合：
