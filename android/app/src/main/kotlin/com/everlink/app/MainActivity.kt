@@ -14,10 +14,13 @@ import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 import java.net.Inet4Address
 
@@ -41,6 +44,11 @@ class MainActivity : FlutterActivity() {
 
     // 应用内下载并安装 APK 的广播接收器（DownloadManager 下载完成后触发安装）。
     private var installReceiver: BroadcastReceiver? = null
+
+    // 下载 / 安装进度回传给 Dart 的事件通道（弹框实时展示）。
+    private var installEventSink: EventChannel.EventSink? = null
+    private val installHandler = Handler(Looper.getMainLooper())
+    private var installPollRunnable: Runnable? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -92,6 +100,21 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+
+        // 下载 / 安装进度事件通道：原生侧把 started / progress / completed /
+        // failed 事件实时回传给 Dart，用于驱动「正在下载」专用弹框。
+        EventChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            INSTALLER_EVENTS_CHANNEL
+        ).setStreamHandler(object : EventChannel.StreamHandler {
+            override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                installEventSink = events
+            }
+
+            override fun onCancel(arguments: Any?) {
+                installEventSink = null
+            }
+        })
     }
 
     private fun acquireLock(): Boolean {
@@ -343,6 +366,12 @@ class MainActivity : FlutterActivity() {
      * 通过系统 DownloadManager 下载 APK，下载完成后自动拉起系统安装器。
      * 需要 AndroidManifest 中声明 REQUEST_INSTALL_PACKAGES 权限
      * （Android 8+ 首次会引导用户在设置中允许“安装未知应用”）。
+     *
+     * 下载 / 安装状态通过 [installEventSink]（EventChannel）实时回传 Dart：
+     *   {status:"started"}
+     *   {status:"progress", downloaded:Long, total:Long}
+     *   {status:"completed"}
+     *   {status:"failed", message:String}
      */
     private fun downloadAndInstall(url: String, result: MethodChannel.Result) {
         try {
@@ -359,12 +388,55 @@ class MainActivity : FlutterActivity() {
                 setMimeType("application/vnd.android.package-archive")
             }
             val id = dm.enqueue(request)
+            installEventSink?.success(mapOf("status" to "started"))
+
+            // 轮询下载进度（500ms 一次），仅 RUNNING/PENDING 阶段回报，完成时由广播接收器接管。
+            val pollRunnable = object : Runnable {
+                override fun run() {
+                    try {
+                        val q = DownloadManager.Query().setFilterById(id)
+                        val cursor = dm.query(q)
+                        if (cursor.moveToFirst()) {
+                            val status = cursor.getInt(
+                                cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS)
+                            )
+                            if (status == DownloadManager.STATUS_RUNNING ||
+                                status == DownloadManager.STATUS_PENDING
+                            ) {
+                                val downloaded = cursor.getLong(
+                                    cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)
+                                )
+                                val total = cursor.getLong(
+                                    cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
+                                )
+                                installEventSink?.success(
+                                    mapOf(
+                                        "status" to "progress",
+                                        "downloaded" to downloaded,
+                                        "total" to total
+                                    )
+                                )
+                                installHandler.postDelayed(this, 500)
+                            }
+                        }
+                        cursor.close()
+                    } catch (_: Exception) {
+                        // 查询异常：继续保持轮询，下一轮再试。
+                        installHandler.postDelayed(this, 500)
+                    }
+                }
+            }
+            installPollRunnable = pollRunnable
+            installHandler.postDelayed(pollRunnable, 500)
 
             installReceiver = object : BroadcastReceiver() {
                 override fun onReceive(context: Context?, intent: Intent?) {
                     val receivedId =
                         intent?.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1L) ?: -1L
                     if (receivedId != id) return
+                    // 停止进度轮询。
+                    installPollRunnable?.let { installHandler.removeCallbacks(it) }
+                    installPollRunnable = null
                     try {
                         val query = DownloadManager.Query().setFilterById(id)
                         val cursor = dm.query(query)
@@ -374,6 +446,7 @@ class MainActivity : FlutterActivity() {
                             )
                             if (status == DownloadManager.STATUS_SUCCESSFUL) {
                                 val apkUri = dm.getUriForDownloadedFile(id)
+                                installEventSink?.success(mapOf("status" to "completed"))
                                 val installIntent = Intent(Intent.ACTION_VIEW).apply {
                                     setDataAndType(
                                         apkUri,
@@ -384,12 +457,22 @@ class MainActivity : FlutterActivity() {
                                 }
                                 applicationContext.startActivity(installIntent)
                             } else {
-                                this@MainActivity.showInstallToast("更新包下载失败")
+                                val reason = cursor.getInt(
+                                    cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON)
+                                )
+                                installEventSink?.success(
+                                    mapOf(
+                                        "status" to "failed",
+                                        "message" to "更新包下载失败（错误码 $reason）"
+                                    )
+                                )
                             }
                         }
                         cursor.close()
                     } catch (e: Exception) {
-                        this@MainActivity.showInstallToast("更新失败：${e.message}")
+                        installEventSink?.success(
+                            mapOf("status" to "failed", "message" to "更新失败：${e.message}")
+                        )
                     }
                     installReceiver?.let { applicationContext.unregisterReceiver(it) }
                     installReceiver = null
@@ -407,14 +490,10 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun showInstallToast(msg: String) {
-        android.widget.Toast
-            .makeText(applicationContext, msg, android.widget.Toast.LENGTH_LONG)
-            .show()
-    }
-
     override fun onDestroy() {
         releaseLock()
+        installPollRunnable?.let { installHandler.removeCallbacks(it) }
+        installPollRunnable = null
         installReceiver?.let {
             try {
                 applicationContext.unregisterReceiver(it)
@@ -428,5 +507,6 @@ class MainActivity : FlutterActivity() {
     companion object {
         private const val CHANNEL = "everlink/lan"
         private const val INSTALLER_CHANNEL = "everlink/installer"
+        private const val INSTALLER_EVENTS_CHANNEL = "everlink/installer_events"
     }
 }

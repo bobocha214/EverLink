@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
-import 'package:everlink/services/app_installer.dart';
 import 'package:everlink/services/settings_service.dart';
 import 'package:everlink/services/update_service.dart';
+import 'package:everlink/ui/update_dialog.dart';
 
 /// 检查更新：从 GitHub Releases 拉取最新版本。
 class UpdatePage extends StatefulWidget {
@@ -31,47 +31,9 @@ class _UpdatePageState extends State<UpdatePage> {
 
     if (result.hasUpdate && result.info != null) {
       final u = result.info!;
-      final go = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('发现新版本'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('新版本 v${u.version}'
-                  '${u.build != null ? ' (${u.build})' : ''} 可用'),
-              if (u.notes != null && u.notes!.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Text(u.notes!,
-                    style: const TextStyle(color: Colors.grey, fontSize: 13)),
-              ],
-              const SizedBox(height: 8),
-              const Text('是否立即下载并更新？', style: TextStyle(fontSize: 13)),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('稍后'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('下载更新'),
-            ),
-          ],
-        ),
-      );
-      if (go == true && mounted) {
-        final ok = await AppInstaller.downloadAndInstall(u.url);
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(ok
-                ? '已开始下载，完成后将自动弹出安装'
-                : '无法下载：${u.url}'),
-          ),
-        );
+      final go = await showUpdateDialog(context, u);
+      if (go && mounted) {
+        await showDownloadDialog(context, u.url);
       }
     } else if (result.error != null) {
       _showInfo('检查更新失败', result.error!);

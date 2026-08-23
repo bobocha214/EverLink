@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
-import 'package:everlink/services/app_installer.dart';
 import 'package:everlink/services/settings_service.dart';
 import 'package:everlink/services/update_service.dart';
 import 'package:everlink/ui/home_page.dart';
 import 'package:everlink/ui/history_page.dart';
 import 'package:everlink/ui/profile_page.dart';
 import 'package:everlink/ui/tools_page.dart';
+import 'package:everlink/ui/update_dialog.dart';
 
 /// 应用主框架：底部导航栏承载"设备 / 历史 / 工具 / 我的"四个页面。
 class MainScaffold extends StatefulWidget {
@@ -58,57 +58,16 @@ class _MainScaffoldState extends State<MainScaffold> {
 
     if (!mounted) return;
 
+    // 检测到新版本：直接弹出专用更新对话框（不再用底部 SnackBar）。
     if (result.hasUpdate && result.info != null) {
       final u = result.info!;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          duration: const Duration(seconds: 10),
-          content: Text('发现新版本 v${u.version}，点击更新'),
-          action: SnackBarAction(
-            label: '更新',
-            onPressed: () => _showUpdateDialog(u),
-          ),
-        ),
-      );
+      final confirmed = await showUpdateDialog(context, u);
+      if (!mounted) return;
+      if (confirmed) {
+        await showDownloadDialog(context, u.url);
+      }
     }
     // 静默检查：无更新或出错时不打扰用户。
-  }
-
-  void _showUpdateDialog(UpdateInfo u) {
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('发现新版本'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('新版本 v${u.version}'
-                '${u.build != null ? ' (${u.build})' : ''} 可用'),
-            if (u.notes != null && u.notes!.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Text(u.notes!,
-                  style: const TextStyle(color: Colors.grey, fontSize: 13)),
-            ],
-            const SizedBox(height: 8),
-            const Text('是否立即下载并更新？', style: TextStyle(fontSize: 13)),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('稍后'),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              AppInstaller.downloadAndInstall(u.url);
-            },
-            child: const Text('下载更新'),
-          ),
-        ],
-      ),
-    );
   }
 
   @override
