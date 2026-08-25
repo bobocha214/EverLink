@@ -46,4 +46,16 @@ class AppInstaller {
     }
     return false;
   }
+
+  /// 拉起系统安装器安装已下载的更新包（下载完成后手动触发 / 兜底）。
+  /// 返回是否成功发起安装意图。需要原生侧先完成下载并保留 APK 路径。
+  static Future<bool> launchInstall() async {
+    if (!Platform.isAndroid) return false;
+    try {
+      final ok = await _channel.invokeMethod<bool>('installApk');
+      return ok == true;
+    } on PlatformException {
+      return false;
+    }
+  }
 }

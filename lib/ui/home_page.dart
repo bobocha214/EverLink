@@ -272,8 +272,14 @@ class _HomePageState extends State<HomePage> {
         icon: const Icon(Icons.add),
         label: const Text('添加设备'),
       ),
+      floatingActionButtonLocation: const _FabAboveNav(),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.only(
+          left: 16,
+          right: 16,
+          top: 16,
+          bottom: 16 + (SettingsService.instance.navFloating ? 100 : 0),
+        ),
         children: [
           _buildStatRow(mgr),
           const SizedBox(height: 12),
@@ -652,5 +658,17 @@ class _FilterChip extends StatelessWidget {
       selected: selected,
       onSelected: (_) => onSelected(),
     );
+  }
+}
+
+/// 自定义 FAB 定位：菜单栏悬浮时把 FAB 抬到底栏上方，避免被遮挡。
+class _FabAboveNav extends FloatingActionButtonLocation {
+  const _FabAboveNav();
+
+  @override
+  Offset getOffset(ScaffoldPrelayoutGeometry geometry) {
+    final base = FloatingActionButtonLocation.endFloat.getOffset(geometry);
+    final extra = SettingsService.instance.navFloating ? 100.0 : 0.0;
+    return Offset(base.dx, base.dy - extra);
   }
 }

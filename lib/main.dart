@@ -6,6 +6,7 @@ import 'package:everlink/services/ping_history_service.dart';
 import 'package:everlink/services/session_manager.dart';
 import 'package:everlink/services/settings_service.dart';
 import 'package:everlink/ui/main_scaffold.dart';
+import 'package:everlink/ui/widgets/app_background.dart';
 import 'package:everlink/utils/app_theme.dart';
 
 void main() async {
@@ -56,6 +57,16 @@ class _EverlinkAppState extends State<EverlinkApp> {
       theme: AppTheme.build(Brightness.light),
       darkTheme: AppTheme.build(Brightness.dark),
       themeMode: settings.themeMode,
+      // 全局背景层：所有页面的脚手架背景已透明，由这里统一提供
+      // 纯色 / 预设渐变 / 本地图（详见 AppBackground）。
+      builder: (context, child) => Stack(
+        fit: StackFit.expand,
+        children: [
+          const AppBackground(),
+          // MaterialApp 的 builder 中 child（Navigator）始终非空。
+          child!,
+        ],
+      ),
       home: const MainScaffold(),
     );
   }

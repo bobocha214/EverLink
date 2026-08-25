@@ -27,6 +27,28 @@ class SettingsService extends ChangeNotifier {
   /// 上次自动检查更新的时间戳（ms），用于避免短时间内重复检查。
   int _lastAutoCheckMs = 0;
 
+  // —— 外观 ——
+  /// 主题配色预设索引（0=青绿，详见 [AppTheme] 的调色板）。
+  int _accentIndex = 0;
+  /// 圆角风格：0=紧凑 / 1=标准 / 2=宽松。
+  int _cornerStyle = 1;
+  /// 玻璃质感强度：0=关 / 1=轻 / 2=中 / 3=强。
+  int _glassStrength = 2;
+
+  // —— 背景 ——
+  /// 是否启用自定义背景（使用本地图片）。
+  bool _backgroundEnabled = false;
+  /// 本地背景图片的本地文件系统路径（开启自定义背景后生效）。
+  String? _backgroundImagePath;
+  /// 背景模糊强度（sigma，0~12）。
+  double _backgroundBlur = 4.0;
+  /// 背景暗化强度（0~0.75，保证前景内容可读）。
+  double _backgroundDim = 0.35;
+
+  // —— 导航 ——
+  /// 底部菜单栏是否悬浮（毛玻璃浮动样式）。
+  bool _navFloating = true;
+
   bool get initialized => _initialized;
 
   /// 从本地存储载入设置。必须在 [runApp] 之前 await。
@@ -51,6 +73,19 @@ class SettingsService extends ChangeNotifier {
     _updateSource = _prefs.getInt('update_source') ?? 0;
     _autoCheckUpdate = _prefs.getBool('auto_check_update') ?? true;
     _lastAutoCheckMs = _prefs.getInt('last_auto_check_ms') ?? 0;
+
+    // 外观
+    _accentIndex = _prefs.getInt('accent_index') ?? 0;
+    _cornerStyle = _prefs.getInt('corner_style') ?? 1;
+    _glassStrength = _prefs.getInt('glass_strength') ?? 2;
+    // 背景
+    _backgroundEnabled = _prefs.getBool('background_enabled') ?? false;
+    _backgroundImagePath = _prefs.getString('background_image_path');
+    _backgroundBlur = _prefs.getDouble('background_blur') ?? 4.0;
+    _backgroundDim = _prefs.getDouble('background_dim') ?? 0.35;
+    // 导航
+    _navFloating = _prefs.getBool('nav_floating') ?? true;
+
     _initialized = true;
     notifyListeners();
   }
@@ -107,6 +142,87 @@ class SettingsService extends ChangeNotifier {
 
   /// 项目文档主页地址。
   String get docsUrl => AppConstants.docsUrl;
+
+  // —— 外观 ——
+  int get accentIndex => _accentIndex;
+
+  Future<void> setAccentIndex(int v) async {
+    if (_accentIndex == v) return;
+    _accentIndex = v;
+    await _prefs.setInt('accent_index', v);
+    notifyListeners();
+  }
+
+  int get cornerStyle => _cornerStyle;
+
+  Future<void> setCornerStyle(int v) async {
+    if (_cornerStyle == v) return;
+    _cornerStyle = v;
+    await _prefs.setInt('corner_style', v);
+    notifyListeners();
+  }
+
+  int get glassStrength => _glassStrength;
+
+  Future<void> setGlassStrength(int v) async {
+    if (_glassStrength == v) return;
+    _glassStrength = v;
+    await _prefs.setInt('glass_strength', v);
+    notifyListeners();
+  }
+
+  // —— 背景 ——
+  bool get backgroundEnabled => _backgroundEnabled;
+
+  Future<void> setBackgroundEnabled(bool v) async {
+    if (_backgroundEnabled == v) return;
+    _backgroundEnabled = v;
+    await _prefs.setBool('background_enabled', v);
+    notifyListeners();
+  }
+
+  String? get backgroundImagePath => _backgroundImagePath;
+
+  Future<void> setBackgroundImagePath(String? path) async {
+    if (_backgroundImagePath == path) return;
+    _backgroundImagePath = path;
+    if (path == null) {
+      await _prefs.remove('background_image_path');
+    } else {
+      await _prefs.setString('background_image_path', path);
+    }
+    notifyListeners();
+  }
+
+  double get backgroundBlur => _backgroundBlur;
+
+  Future<void> setBackgroundBlur(double v) async {
+    v = v.clamp(0.0, 12.0);
+    if (_backgroundBlur == v) return;
+    _backgroundBlur = v;
+    await _prefs.setDouble('background_blur', v);
+    notifyListeners();
+  }
+
+  double get backgroundDim => _backgroundDim;
+
+  Future<void> setBackgroundDim(double v) async {
+    v = v.clamp(0.0, 0.75);
+    if (_backgroundDim == v) return;
+    _backgroundDim = v;
+    await _prefs.setDouble('background_dim', v);
+    notifyListeners();
+  }
+
+  // —— 导航 ——
+  bool get navFloating => _navFloating;
+
+  Future<void> setNavFloating(bool v) async {
+    if (_navFloating == v) return;
+    _navFloating = v;
+    await _prefs.setBool('nav_floating', v);
+    notifyListeners();
+  }
 
   /// 当前已启用的协议描述符（供添加设备、首页筛选等处使用）。
   List<ProtocolDescriptor> get enabledDescriptors =>

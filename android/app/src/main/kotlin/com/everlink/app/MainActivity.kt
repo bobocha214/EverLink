@@ -49,6 +49,8 @@ class MainActivity : FlutterActivity() {
     private var installEventSink: EventChannel.EventSink? = null
     private val installHandler = Handler(Looper.getMainLooper())
     private var installPollRunnable: Runnable? = null
+    // 最近一次下载完成的 APK Uri，供 Dart 侧「立即安装」按钮手动拉起安装。
+    private var lastApkUri: Uri? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -95,6 +97,24 @@ class MainActivity : FlutterActivity() {
                         result.error("ARG", "url required", null)
                     } else {
                         downloadAndInstall(url, result)
+                    }
+                }
+                "installApk" -> {
+                    val uri = lastApkUri
+                    if (uri == null) {
+                        result.error("NOAPK", "没有可安装的更新包", null)
+                    } else {
+                        try {
+                            val installIntent = Intent(Intent.ACTION_VIEW).apply {
+                                setDataAndType(uri, "application/vnd.android.package-archive")
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            applicationContext.startActivity(installIntent)
+                            result.success(true)
+                        } catch (e: Exception) {
+                            result.error("INST", "启动安装失败：${e.message}", null)
+                        }
                     }
                 }
                 else -> result.notImplemented()
@@ -446,6 +466,7 @@ class MainActivity : FlutterActivity() {
                             )
                             if (status == DownloadManager.STATUS_SUCCESSFUL) {
                                 val apkUri = dm.getUriForDownloadedFile(id)
+                                lastApkUri = apkUri
                                 installEventSink?.success(mapOf("status" to "completed"))
                                 val installIntent = Intent(Intent.ACTION_VIEW).apply {
                                     setDataAndType(

@@ -173,12 +173,8 @@ class _DownloadDialogState extends State<_DownloadDialog> {
           _indeterminate = false;
           _progress = 100;
         });
-        // 系统安装器将接管，稍后自动收起弹框（用户取消安装返回时不再残留）。
-        Future.delayed(const Duration(milliseconds: 1500), () {
-          if (mounted && Navigator.of(context).canPop()) {
-            Navigator.of(context).pop();
-          }
-        });
+        // 原生已尝试自动拉起系统安装器；此处保留弹框并提供「立即安装」按钮，
+        // 作为自动拉起未生效（如未授予“安装未知应用”权限）时的手动兜底。
       case 'failed':
         setState(() {
           _failed = true;
@@ -216,7 +212,8 @@ class _DownloadDialogState extends State<_DownloadDialog> {
     if (_failed) {
       body = Text(_error, style: const TextStyle(color: Colors.grey, fontSize: 13));
     } else if (_done) {
-      body = const Text('更新包已下载完成，正在启动安装程序…',
+      body = const Text(
+          '更新包已下载完成。点击「立即安装」开始升级，将保留您的全部本地数据。',
           style: TextStyle(color: Colors.grey, fontSize: 13));
     } else {
       body = Column(
@@ -258,8 +255,28 @@ class _DownloadDialogState extends State<_DownloadDialog> {
         ),
       ];
     } else if (_done) {
-      // 自动收起，无需按钮。
-      actions = const [];
+      actions = [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('稍后'),
+        ),
+        FilledButton(
+          onPressed: () async {
+            final navigator = Navigator.of(context);
+            final ok = await AppInstaller.launchInstall();
+            if (!mounted) return;
+            if (ok) {
+              if (navigator.canPop()) navigator.pop();
+            } else {
+              setState(() {
+                _failed = true;
+                _error = '无法启动安装，请检查是否已允许“安装未知应用”权限';
+              });
+            }
+          },
+          child: const Text('立即安装'),
+        ),
+      ];
     } else {
       actions = [
         TextButton(

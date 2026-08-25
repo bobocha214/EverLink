@@ -366,7 +366,12 @@ class _HistoryPageState extends State<HistoryPage> {
 
   Widget _buildList(List<HistoryRecord> records) {
     return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      padding: EdgeInsets.fromLTRB(
+        16,
+        8,
+        16,
+        16 + (SettingsService.instance.navFloating ? 100 : 0),
+      ),
       itemCount: records.length,
       separatorBuilder: (_, _) => const SizedBox(height: 8),
       itemBuilder: (context, index) {

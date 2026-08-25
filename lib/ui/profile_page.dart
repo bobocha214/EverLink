@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'package:everlink/services/settings_service.dart';
 import 'package:everlink/ui/about_page.dart';
 import 'package:everlink/ui/data_storage_page.dart';
 import 'package:everlink/ui/protocol_config_page.dart';
-import 'package:everlink/ui/theme_page.dart';
+import 'package:everlink/ui/settings_page.dart';
 import 'package:everlink/ui/update_page.dart';
 import 'package:everlink/utils/app_constants.dart';
 import 'package:everlink/utils/app_routes.dart';
@@ -25,7 +26,12 @@ class ProfilePage extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('我的')),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.only(
+          left: 16,
+          right: 16,
+          top: 16,
+          bottom: 16 + (SettingsService.instance.navFloating ? 100 : 0),
+        ),
         children: [
           _buildHeader(context),
           const SizedBox(height: 16),
@@ -47,10 +53,10 @@ class ProfilePage extends StatelessWidget {
                 ),
                 const Divider(height: 1),
                 _MenuItem(
-                  icon: Icons.palette,
-                  title: '主题',
-                  subtitle: '浅色 / 深色 / 跟随系统',
-                  onTap: () => AppRoutes.push(context, const ThemePage()),
+                  icon: Icons.settings,
+                  title: '系统设置',
+                  subtitle: '主题、外观、背景与导航',
+                  onTap: () => AppRoutes.push(context, const SettingsPage()),
                 ),
                 const Divider(height: 1),
                 _MenuItem(

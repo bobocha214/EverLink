@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:everlink/services/settings_service.dart';
 import 'package:everlink/ui/base_tool_page.dart';
 import 'package:everlink/ui/clipboard_manager_page.dart';
 import 'package:everlink/ui/lan_transfer_page.dart';
@@ -16,7 +17,12 @@ class ToolsPage extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('工具')),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.only(
+          left: 16,
+          right: 16,
+          top: 16,
+          bottom: 16 + (SettingsService.instance.navFloating ? 100 : 0),
+        ),
         children: [
           _ToolCard(
             icon: Icons.rocket_launch_outlined,
