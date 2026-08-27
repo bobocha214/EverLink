@@ -2,6 +2,7 @@ import 'package:everlink/services/tcp_server.dart';
 import 'package:everlink/services/opcua_server.dart';
 import 'package:everlink/services/mqtt_broker.dart';
 import 'package:everlink/services/mqtt_publisher.dart';
+import 'package:everlink/services/modbus_slave.dart';
 
 /// 常驻服务实例容器。
 ///
@@ -20,6 +21,7 @@ class ServerRegistry {
   OpcUaServer? _opcua;
   MqttBroker? _broker;
   MqttPublisher? _publisher;
+  ModbusTcpSlaveServer? _modbusSlave;
 
   TcpServer get tcp {
     _tcp ??= TcpServer();
@@ -41,6 +43,11 @@ class ServerRegistry {
     return _publisher!;
   }
 
+  ModbusTcpSlaveServer get modbusSlave {
+    _modbusSlave ??= ModbusTcpSlaveServer();
+    return _modbusSlave!;
+  }
+
   /// 全部停止并释放资源（如应用退出时调用）。
   ///
   /// 日常由各自页面按需停止单个服务，通常无需调用本方法。
@@ -53,5 +60,7 @@ class ServerRegistry {
     _broker = null;
     _publisher?.dispose();
     _publisher = null;
+    _modbusSlave?.dispose();
+    _modbusSlave = null;
   }
 }

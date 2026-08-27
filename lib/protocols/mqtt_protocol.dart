@@ -124,9 +124,10 @@ class MqttProtocol extends DeviceProtocol {
       final msg = event.payload;
       if (msg is! MqttPublishMessage) continue;
       final raw = msg.payload.message;
+      final bytes = raw.toList();
       String payload;
       try {
-        payload = utf8.decode(raw.toList());
+        payload = utf8.decode(bytes);
       } catch (_) {
         payload = MqttPublishPayload.bytesToStringAsString(raw);
       }
@@ -134,7 +135,10 @@ class MqttProtocol extends DeviceProtocol {
         MqttMessageRecord(
           topic: event.topic,
           payload: payload,
+          bytes: bytes,
           receivedAt: DateTime.now(),
+          qos: msg.header?.qos.index ?? 0,
+          retain: msg.header?.retain ?? false,
         ),
       );
     }

@@ -6,7 +6,9 @@ import 'package:flutter/services.dart';
 
 import 'package:everlink/services/network_info_service.dart';
 import 'package:everlink/ui/ping_page.dart';
+import 'package:everlink/ui/widgets/tool_list_card.dart';
 import 'package:everlink/utils/app_routes.dart';
+import 'package:everlink/utils/ip_calc.dart';
 
 /// 通用网络调试客户端工具页。
 ///
@@ -24,7 +26,6 @@ class NetworkDebugPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(title: const Text('网络调试')),
       body: ListView.separated(
@@ -33,44 +34,11 @@ class NetworkDebugPage extends StatelessWidget {
         separatorBuilder: (_, __) => const SizedBox(height: 12),
         itemBuilder: (context, i) {
           final f = _netFuncs[i];
-          return Card(
-            clipBehavior: Clip.antiAlias,
-            child: InkWell(
-              onTap: () => AppRoutes.push(context, f.page),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 48,
-                      height: 48,
-                      decoration: BoxDecoration(
-                        color: scheme.primaryContainer,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Icon(f.icon, color: scheme.primary, size: 24),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(f.label,
-                              style: const TextStyle(
-                                  fontSize: 16, fontWeight: FontWeight.w600)),
-                          const SizedBox(height: 4),
-                          Text(f.desc,
-                              style: TextStyle(
-                                  fontSize: 13, color: scheme.onSurfaceVariant)),
-                        ],
-                      ),
-                    ),
-                    Icon(Icons.chevron_right,
-                        color: scheme.onSurfaceVariant),
-                  ],
-                ),
-              ),
-            ),
+          return ToolListCard(
+            icon: f.icon,
+            title: f.label,
+            subtitle: f.desc,
+            onTap: () => AppRoutes.push(context, f.page),
           );
         },
       ),
@@ -873,40 +841,8 @@ class _IpCalcPageState extends State<IpCalcPage> {
     super.dispose();
   }
 
-  List<int>? _parseIp(String s) {
-    final parts = s.split('.');
-    if (parts.length != 4) return null;
-    final out = <int>[];
-    for (final p in parts) {
-      final n = int.tryParse(p.trim());
-      if (n == null || n < 0 || n > 255) return null;
-      out.add(n);
-    }
-    return out;
-  }
-
-  int _toInt(List<int> b) => (b[0] << 24) | (b[1] << 16) | (b[2] << 8) | b[3];
-
-  String _toStr(int v) =>
-      '${(v >> 24) & 0xFF}.${(v >> 16) & 0xFF}.${(v >> 8) & 0xFF}.${v & 0xFF}';
-
-  int _maskToPrefix(List<int> mask) {
-    final v = _toInt(mask);
-    int bits = 0;
-    int t = v;
-    while (t > 0) {
-      bits += t & 1;
-      t >>= 1;
-    }
-    final expected = ((1 << bits) - 1) << (32 - bits);
-    if ((v & 0xFFFFFFFF) != (expected & 0xFFFFFFFF)) {
-      throw const FormatException('子网掩码不连续');
-    }
-    return bits;
-  }
-
   void _calc() {
-    final ip = _parseIp(_ipCtl.text.trim());
+    final ip = parseIp(_ipCtl.text.trim());
     if (ip == null) {
       setState(() => _err = 'IP 格式错误（应为 a.b.c.d，每段 0-255）');
       return;
@@ -920,15 +856,15 @@ class _IpCalcPageState extends State<IpCalcPage> {
           throw const FormatException('CIDR 范围 0-32');
         }
       } else {
-        final mask = _parseIp(maskStr);
+        final mask = parseIp(maskStr);
         if (mask == null) throw const FormatException('掩码格式错误');
-        prefix = _maskToPrefix(mask);
+        prefix = maskToPrefix(mask);
       }
     } on FormatException catch (e) {
       setState(() => _err = '掩码错误：${e.message}');
       return;
     }
-    final ipInt = _toInt(ip);
+    final ipInt = ipToInt(ip);
     final maskInt = ((0xFFFFFFFF << (32 - prefix)) & 0xFFFFFFFF);
     final net = ipInt & maskInt;
     final bcast = net | (~maskInt & 0xFFFFFFFF);
@@ -938,10 +874,10 @@ class _IpCalcPageState extends State<IpCalcPage> {
     setState(() {
       _err = null;
       _result = 'CIDR：/$prefix\n'
-          '网络地址：${_toStr(net)}\n'
-          '广播地址：${_toStr(bcast)}\n'
+          '网络地址：${intToIp(net)}\n'
+          '广播地址：${intToIp(bcast)}\n'
           '可用主机：${hostCount > 0 ? '$hostCount 个' : '无（/31、/32）'}\n'
-          '可用范围：${hostCount > 0 ? '${_toStr(first)} ~ ${_toStr(last)}' : _toStr(net)}';
+          '可用范围：${hostCount > 0 ? '${intToIp(first)} ~ ${intToIp(last)}' : intToIp(net)}';
     });
   }
 

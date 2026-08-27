@@ -21,6 +21,55 @@ class ProfilePage extends StatelessWidget {
     }
   }
 
+  /// 每个菜单项独立成卡片，卡片之间留白，整列更透气。
+  List<Widget> _menuItems(BuildContext context) {
+    final items = [
+      _MenuItem(
+        icon: Icons.bolt,
+        title: '协议配置',
+        subtitle: '管理可启用的通信协议',
+        onTap: () => AppRoutes.push(context, const ProtocolConfigPage()),
+      ),
+      _MenuItem(
+        icon: Icons.storage,
+        title: '数据存储',
+        subtitle: '查看与清理本地数据',
+        onTap: () => AppRoutes.push(context, const DataStoragePage()),
+      ),
+      _MenuItem(
+        icon: Icons.settings,
+        title: '系统设置',
+        subtitle: '主题、外观、背景与导航',
+        onTap: () => AppRoutes.push(context, const SettingsPage()),
+      ),
+      _MenuItem(
+        icon: Icons.menu_book,
+        title: '帮助文档',
+        subtitle: '使用手册与在线文档',
+        trailingIcon: Icons.open_in_new,
+        onTap: () => _launch(AppConstants.docsUrl),
+      ),
+      _MenuItem(
+        icon: Icons.system_update_alt,
+        title: '检查更新',
+        subtitle: '从 GitHub 检查新版本',
+        onTap: () => AppRoutes.push(context, const UpdatePage()),
+      ),
+      _MenuItem(
+        icon: Icons.info_outline,
+        title: '关于 EverLink',
+        subtitle: '版本信息与开源仓库',
+        onTap: () => AppRoutes.push(context, const AboutPage()),
+      ),
+    ];
+    return [
+      for (final item in items) ...[
+        Card(child: item),
+        const SizedBox(height: 12),
+      ],
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -34,56 +83,9 @@ class ProfilePage extends StatelessWidget {
         ),
         children: [
           _buildHeader(context),
-          const SizedBox(height: 16),
-          Card(
-            child: Column(
-              children: [
-                _MenuItem(
-                  icon: Icons.bolt,
-                  title: '协议配置',
-                  subtitle: '管理可启用的通信协议',
-                  onTap: () => AppRoutes.push(context, const ProtocolConfigPage()),
-                ),
-                const Divider(height: 1),
-                _MenuItem(
-                  icon: Icons.storage,
-                  title: '数据存储',
-                  subtitle: '查看与清理本地数据',
-                  onTap: () => AppRoutes.push(context, const DataStoragePage()),
-                ),
-                const Divider(height: 1),
-                _MenuItem(
-                  icon: Icons.settings,
-                  title: '系统设置',
-                  subtitle: '主题、外观、背景与导航',
-                  onTap: () => AppRoutes.push(context, const SettingsPage()),
-                ),
-                const Divider(height: 1),
-                _MenuItem(
-                  icon: Icons.menu_book,
-                  title: '帮助文档',
-                  subtitle: '使用手册与在线文档',
-                  trailingIcon: Icons.open_in_new,
-                  onTap: () => _launch(AppConstants.docsUrl),
-                ),
-                const Divider(height: 1),
-                _MenuItem(
-                  icon: Icons.system_update_alt,
-                  title: '检查更新',
-                  subtitle: '从 GitHub 检查新版本',
-                  onTap: () => AppRoutes.push(context, const UpdatePage()),
-                ),
-                const Divider(height: 1),
-                _MenuItem(
-                  icon: Icons.info_outline,
-                  title: '关于 EverLink',
-                  subtitle: '版本信息与开源仓库',
-                  onTap: () => AppRoutes.push(context, const AboutPage()),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 20),
+          ..._menuItems(context),
+          const SizedBox(height: 24),
         ],
       ),
     );
@@ -143,11 +145,26 @@ class _MenuItem extends StatelessWidget {
   final IconData trailingIcon;
 
   @override
-  Widget build(BuildContext context) => ListTile(
-        leading: Icon(icon, color: Theme.of(context).colorScheme.primary),
-        title: Text(title),
-        subtitle: Text(subtitle, style: const TextStyle(fontSize: 12)),
-        trailing: Icon(trailingIcon, size: 18),
-        onTap: onTap,
-      );
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return ListTile(
+      contentPadding:
+          const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      leading: Container(
+        width: 42,
+        height: 42,
+        decoration: BoxDecoration(
+          color: scheme.primary.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Icon(icon, color: scheme.primary, size: 21),
+      ),
+      title: Text(title,
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+      subtitle: Text(subtitle, style: const TextStyle(fontSize: 12.5)),
+      trailing: Icon(trailingIcon, size: 18,
+          color: scheme.onSurface.withValues(alpha: 0.45)),
+      onTap: onTap,
+    );
+  }
 }

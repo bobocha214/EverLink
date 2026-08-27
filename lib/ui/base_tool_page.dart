@@ -4,7 +4,10 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'package:everlink/ui/widgets/tool_list_card.dart';
 import 'package:everlink/utils/app_routes.dart';
+import 'package:everlink/utils/byte_codec.dart';
+import 'package:everlink/utils/number_codec.dart';
 
 /// 进制工具页（离线，无需连接设备）。
 ///
@@ -16,7 +19,6 @@ class BaseToolPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(title: const Text('进制工具')),
       body: ListView.separated(
@@ -25,44 +27,11 @@ class BaseToolPage extends StatelessWidget {
         separatorBuilder: (_, __) => const SizedBox(height: 12),
         itemBuilder: (context, i) {
           final f = _baseFuncs[i];
-          return Card(
-            clipBehavior: Clip.antiAlias,
-            child: InkWell(
-              onTap: () => AppRoutes.push(context, f.page),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 48,
-                      height: 48,
-                      decoration: BoxDecoration(
-                        color: scheme.primaryContainer,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Icon(f.icon, color: scheme.primary, size: 24),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(f.label,
-                              style: const TextStyle(
-                                  fontSize: 16, fontWeight: FontWeight.w600)),
-                          const SizedBox(height: 4),
-                          Text(f.desc,
-                              style: TextStyle(
-                                  fontSize: 13, color: scheme.onSurfaceVariant)),
-                        ],
-                      ),
-                    ),
-                    Icon(Icons.chevron_right,
-                        color: scheme.onSurfaceVariant),
-                  ],
-                ),
-              ),
-            ),
+          return ToolListCard(
+            icon: f.icon,
+            title: f.label,
+            subtitle: f.desc,
+            onTap: () => AppRoutes.push(context, f.page),
           );
         },
       ),
@@ -131,55 +100,8 @@ class _BaseQuickBar extends StatelessWidget {
   }
 }
 
-/// 解析 hex 文本为字节列表，失败返回 null。
-List<int>? _parseHex(String s) {
-  final cleaned = s.replaceAll(RegExp(r'\s+'), '');
-  if (cleaned.isEmpty) return [];
-  if (cleaned.length % 2 != 0) return null;
-  final out = <int>[];
-  for (var i = 0; i < cleaned.length; i += 2) {
-    final v = int.tryParse(cleaned.substring(i, i + 2), radix: 16);
-    if (v == null) return null;
-    out.add(v);
-  }
-  return out;
-}
-
-String _toHex(List<int> bytes) =>
-    bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ');
-
-/// 按指定进制解析字符串，失败返回 null。
-/// 自动识别 0x / 0o / 0b 前缀；十进制支持负号。
-BigInt? _parseRadix(String s, int radix) {
-  var t = s.trim();
-  if (t.isEmpty) return BigInt.zero;
-  if (radix == 16 && t.toLowerCase().startsWith('0x')) t = t.substring(2);
-  if (radix == 8 && t.toLowerCase().startsWith('0o')) t = t.substring(2);
-  if (radix == 2 && t.toLowerCase().startsWith('0b')) t = t.substring(2);
-  if (t.isEmpty) return BigInt.zero;
-  try {
-    return BigInt.parse(t, radix: radix);
-  } catch (_) {
-    return null;
-  }
-}
-
-/// 有符号值 → 指定位宽的补码无符号表示（大整数模 2^width）。
-BigInt _toUnsigned(BigInt signed, int width) {
-  final modulus = BigInt.one << width;
-  BigInt u = signed % modulus;
-  if (u < BigInt.zero) u += modulus;
-  return u;
-}
-
-/// 指定位宽的补码无符号表示 → 有符号值。
-BigInt _toSigned(BigInt u, int width) {
-  final modulus = BigInt.one << width;
-  final half = BigInt.one << (width - 1);
-  return u >= half ? u - modulus : u;
-}
-
-String _pad(String s, int len) => s.padLeft(len, '0');
+/// 进制转换 / 补码 / Hex 相关纯函数已抽到 [number_codec] 与 [byte_codec]，
+/// 此处仅保留 UI 状态与交互逻辑。
 
 /// 页面：多种进制互转（BigInt 大整数 + 可选补码 + 字节视图）。
 class _BaseConvertPage extends StatefulWidget {
@@ -213,7 +135,7 @@ class _BaseConvertPageState extends State<_BaseConvertPage> {
   /// 从某个字段解析并更新其余字段。
   /// [isDecimal] 表示来源字段是十进制（有符号模式下即直接的有符号值）。
   void _setFrom(String text, int radix, bool isDecimal) {
-    final raw = _parseRadix(text, radix);
+    final raw = parseRadix(text, radix);
     if (raw == null) {
       setState(() => _err = '格式错误（含非法字符或非 $_width 进制范围）');
       return;
@@ -230,7 +152,7 @@ class _BaseConvertPageState extends State<_BaseConvertPage> {
       signed = raw;
     } else {
       // 其他进制按当前位宽的补码无符号值解析
-      signed = _toSigned(raw, _width);
+      signed = toSigned(raw, _width);
     }
     _signedValue = signed;
     _pushToAllExcept(_fieldFor(radix, isDecimal));
@@ -257,9 +179,12 @@ class _BaseConvertPageState extends State<_BaseConvertPage> {
       if (skip != _dec) _dec.text = d;
       if (skip != _hex) _hex.text = h;
     } else {
-      final u = _toUnsigned(s, _width);
-      final b = _pad(u.toRadixString(2), _width);
-      final h = _pad(u.toRadixString(16).toUpperCase(), (_width + 3) ~/ 4);
+      final u = toUnsigned(s, _width);
+      final b = u.toRadixString(2).padLeft(_width, '0');
+      final h = u
+          .toRadixString(16)
+          .toUpperCase()
+          .padLeft((_width + 3) ~/ 4, '0');
       if (skip != _bin) _bin.text = b;
       if (skip != _oct) _oct.text = u.toRadixString(8);
       if (skip != _dec) _dec.text = s.toString();
@@ -269,7 +194,7 @@ class _BaseConvertPageState extends State<_BaseConvertPage> {
 
   /// 计算当前值的大端字节视图。
   List<int> _computeBytes() {
-    final u = _signed ? _toUnsigned(_signedValue, _width) : _signedValue;
+    final u = _signed ? toUnsigned(_signedValue, _width) : _signedValue;
     int byteLen = _signed ? _width ~/ 8 : ((u.bitLength + 7) ~/ 8);
     if (byteLen < 1) byteLen = 1;
     final bytes = List.filled(byteLen, 0);
@@ -502,12 +427,12 @@ class _TextHexPageState extends State<_TextHexPage> {
   void _textToHex() {
     final bytes = utf8.encode(_textCtl.text);
     setState(() {
-      _hexCtl.text = _toHex(bytes);
+      _hexCtl.text = hexString(Uint8List.fromList(bytes));
     });
   }
 
   void _hexToText() {
-    final bytes = _parseHex(_hexCtl.text);
+    final bytes = parseHex(_hexCtl.text);
     if (bytes == null) {
       setState(() => _hexErr = 'Hex 格式错误（需偶数位十六进制）');
       return;
@@ -618,7 +543,7 @@ class _EndianPageState extends State<_EndianPage> {
   }
 
   void _convert() {
-    final bytes = _parseHex(_ctl.text);
+    final bytes = parseHex(_ctl.text);
     if (bytes == null) {
       setState(() => _err = 'Hex 格式错误（需偶数位十六进制）');
       return;
@@ -634,7 +559,7 @@ class _EndianPageState extends State<_EndianPage> {
     }
     final swapped = bytes.reversed.toList();
     setState(() {
-      _result = _toHex(swapped);
+      _result = hexString(Uint8List.fromList(swapped));
       _err = null;
     });
   }
@@ -735,7 +660,7 @@ class _FloatPageState extends State<_FloatPage> {
   }
 
   void _parse() {
-    final bytes = _parseHex(_ctl.text);
+    final bytes = parseHex(_ctl.text);
     if (bytes == null) {
       setState(() => _err = 'Hex 格式错误（需偶数位十六进制）');
       return;
@@ -857,7 +782,7 @@ class _CrcPageState extends State<_CrcPage> {
   }
 
   void _calc() {
-    final bytes = _parseHex(_ctl.text);
+    final bytes = parseHex(_ctl.text);
     if (bytes == null) {
       setState(() => _err = 'Hex 格式错误（需偶数位十六进制）');
       return;

@@ -143,7 +143,8 @@ bool bytesEqual(Uint8List a, Uint8List b) {
 
 /// 把十六进制文本（可含空格）解析为字节；非法返回 null。
 Uint8List? parseHex(String text) {
-  final cleaned = text.replaceAll(RegExp(r'\s+'), '');
+  var cleaned = text.replaceAll(RegExp(r'\s+'), '');
+  if (cleaned.toLowerCase().startsWith('0x')) cleaned = cleaned.substring(2);
   if (cleaned.isEmpty || cleaned.length % 2 != 0) return null;
   try {
     return Uint8List.fromList([
