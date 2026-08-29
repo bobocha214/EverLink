@@ -113,9 +113,7 @@ flutter_launcher_icons:
   adaptive_icon_foreground: "assets/icon/icon_foreground.png"
   remove_alpha_ios: true
   min_sdk_android: 21
-  # Windows：生成 windows/runner/resources/app_icon.ico（Runner.rc / win32_window.cpp 引用 IDI_APP_ICON）。
-  # 256 保证任务栏、Alt-Tab、资源管理器大图标模式下依然清晰（此前未启用，一直是 Flutter 默认图标）。
-  windows:
-    generate: true
-    image_path: "assets/icon/icon_source.png"
-    icon_size: 256
+  # Windows 图标不交由 flutter_launcher_icons 生成：其产物为 PNG 压缩条目的 ICO，
+  # ISCC 6 读取时偶发 "Error reading icon file"，导致 CI 的 Build installer (exe) 步骤失败。
+  # Windows 图标改用 scripts/ 下的手工脚本生成为经典多尺寸 BMP ICO
+  # （windows/runner/resources/app_icon.ico），该格式 rc.exe 与 ISCC 均稳定接受。
