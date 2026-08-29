@@ -1,7 +1,9 @@
-name: Build Release APK
+name: Build Release
 
-# 推送任意 tag（如 v1.0.0 / 1.0.0 / 1.1.0）时，自动构建签名 Release APK 并发布到 GitHub Release。
-# 更新检查（UpdateService）会从该 Release 读取版本与 APK 下载地址。
+# 推送任意 tag（如 v1.0.0 / 1.0.0 / 1.1.0）时，自动构建并发布到 GitHub Release：
+#   - Android：签名 Release APK（ubuntu-latest）
+#   - Windows：安装包 EverLink-Setup-*.exe + 便携版 EverLink-Portable-*.zip（windows-latest）
+# 更新检查（UpdateService）会从该 Release 读取版本与各平台下载地址。
 # 注意：tag 名称需与 pubspec.yaml 的 version 字段一致（如代码是 1.1.0，则打 tag 1.1.0 或 v1.1.0）。
 on:
   push:
@@ -133,5 +135,62 @@ jobs:
           # Flutter Gradle 插件把 APK 输出到仓库根的 build/app/outputs/flutter-apk/，
           # 不是 android/app/build/。renameEverLinkApk 任务在此目录重命名为 EverLink-*.apk。
           files: build/app/outputs/flutter-apk/EverLink-*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter (3.44.1)
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.1'
+          channel: 'stable'
+          cache: true
+
+      - name: Enable Windows desktop
+        run: flutter config --enable-windows-desktop
+
+      # tag 可能为 v1.1.4 或 1.1.4，去掉前缀 v。
+      - name: Derive version from tag
+        id: ver
+        shell: bash
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Flutter pub get
+        run: flutter pub get
+
+      - name: Build Windows release
+        run: flutter build windows --release
+
+      # 安装包：windows-latest 镜像已预装 Inno Setup 6（C:\Program Files (x86)\Inno Setup 6\ISCC.exe）。
+      # /DMyAppVersion 注入版本号；/O 指定输出目录（相对仓库根）。
+      - name: Build installer (exe)
+        shell: pwsh
+        env:
+          APPVER: ${{ steps.ver.outputs.version }}
+        run: |
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { $iscc = "C:\Program Files\Inno Setup 6\ISCC.exe" }
+          if (-not (Test-Path $iscc)) { Write-Error "Inno Setup 6 not found"; exit 1 }
+          & $iscc "windows\installer.iss" "/DMyAppVersion=$env:APPVER" "/Obuild\windows\installer"
+          if ($LASTEXITCODE -ne 0) { Write-Error "iscc failed (exit $LASTEXITCODE)"; exit 1 }
+
+      - name: Package portable zip
+        shell: pwsh
+        env:
+          APPVER: ${{ steps.ver.outputs.version }}
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/package_windows.ps1 -Version $env:APPVER -OutputDir build\windows\installer
+
+      - name: Publish to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          # 首个（APK）job 已生成 Release 说明；此处仅追加 Windows 附件。
+          files: |
+            build/windows/installer/EverLink-Setup-*.exe
+            build/windows/installer/EverLink-Portable-*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

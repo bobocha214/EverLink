@@ -4,6 +4,8 @@ import 'package:everlink/models/protocol_type.dart';
 import 'package:everlink/services/history_service.dart';
 import 'package:everlink/services/settings_service.dart';
 import 'package:everlink/ui/history_detail_page.dart';
+import 'package:everlink/ui/widgets/responsive_grid.dart';
+import 'package:everlink/ui/widgets/responsive_sheet.dart';
 import 'package:everlink/utils/app_routes.dart';
 
 /// 操作类别，用于历史筛选。
@@ -183,7 +185,7 @@ class _HistoryPageState extends State<HistoryPage> {
 
   /// 打开右上角筛选面板：以底部弹层承载筛选内容，点击调整即时生效。
   void _showFilterSheet() {
-    showModalBottomSheet(
+    showResponsiveSheet(
       context: context,
       isScrollControlled: true,
       builder: (ctx) => StatefulBuilder(
@@ -365,66 +367,67 @@ class _HistoryPageState extends State<HistoryPage> {
   }
 
   Widget _buildList(List<HistoryRecord> records) {
-    return ListView.separated(
+    return SingleChildScrollView(
       padding: EdgeInsets.fromLTRB(
         16,
         8,
         16,
         16 + (SettingsService.instance.navFloating ? 100 : 0),
       ),
-      itemCount: records.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 8),
-      itemBuilder: (context, index) {
-        final r = records[index];
-        final color = r.success ? Colors.teal : Colors.red;
-        final hasDetail = r.detail != null && r.detail!.isNotEmpty;
-        final hasError = r.error != null && r.error!.isNotEmpty;
-        return Card(
-          child: ListTile(
-            leading: Icon(r.op.icon, color: color),
-            title: Text(r.summary),
-            subtitle: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '${r.type.label} · ${r.deviceName} · ${_formatTime(r.time)}',
-                  style: const TextStyle(fontSize: 12, color: Colors.grey),
-                ),
-                if (hasError)
-                  Text(
-                    r.error!,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 12, color: Colors.red),
-                  )
-                else if (hasDetail)
-                  Text(
-                    r.detail!.replaceAll('\n', ' '),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey,
-                        fontFamily: 'monospace'),
-                  ),
-              ],
+      child: ResponsiveGrid(
+        spacing: 8,
+        children: [for (final r in records) _buildRecordCard(r)],
+      ),
+    );
+  }
+
+  Widget _buildRecordCard(HistoryRecord r) {
+    final color = r.success ? Colors.teal : Colors.red;
+    final hasDetail = r.detail != null && r.detail!.isNotEmpty;
+    final hasError = r.error != null && r.error!.isNotEmpty;
+    return Card(
+      child: ListTile(
+        leading: Icon(r.op.icon, color: color),
+        title: Text(r.summary),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '${r.type.label} · ${r.deviceName} · ${_formatTime(r.time)}',
+              style: const TextStyle(fontSize: 12, color: Colors.grey),
             ),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                r.success
-                    ? const Icon(Icons.check_circle,
-                        color: Colors.green, size: 18)
-                    : const Icon(Icons.error, color: Colors.red, size: 18),
-                const SizedBox(width: 4),
-                const Icon(Icons.chevron_right, color: Colors.grey, size: 20),
-              ],
-            ),
-            isThreeLine: hasDetail || hasError,
-            onTap: () => AppRoutes.push(context, HistoryDetailPage(record: r)),
-          ),
-        );
-      },
+            if (hasError)
+              Text(
+                r.error!,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 12, color: Colors.red),
+              )
+            else if (hasDetail)
+              Text(
+                r.detail!.replaceAll('\n', ' '),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey,
+                    fontFamily: 'monospace'),
+              ),
+          ],
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            r.success
+                ? const Icon(Icons.check_circle, color: Colors.green, size: 18)
+                : const Icon(Icons.error, color: Colors.red, size: 18),
+            const SizedBox(width: 4),
+            const Icon(Icons.chevron_right, color: Colors.grey, size: 20),
+          ],
+        ),
+        isThreeLine: hasDetail || hasError,
+        onTap: () => AppRoutes.push(context, HistoryDetailPage(record: r)),
+      ),
     );
   }
 

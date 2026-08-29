@@ -15,6 +15,8 @@ import 'package:everlink/ui/http_page.dart';
 import 'package:everlink/ui/opcua_page.dart';
 import 'package:everlink/ui/tcp_raw_detail_page.dart';
 import 'package:everlink/ui/widgets/add_device_sheet.dart';
+import 'package:everlink/ui/widgets/responsive_grid.dart';
+import 'package:everlink/ui/widgets/responsive_sheet.dart';
 import 'package:everlink/utils/app_routes.dart';
 
 /// 首页：以卡片形式展示用户保存的所有设备，并汇总在线 / 离线 / 连接中数量。
@@ -294,7 +296,9 @@ class _HomePageState extends State<HomePage> {
               ),
             )
           else
-            ...sessions.map((s) => _buildSessionCard(s)),
+            ResponsiveGrid(
+              children: sessions.map((s) => _buildSessionCard(s)).toList(),
+            ),
         ],
       ),
     );
@@ -309,7 +313,7 @@ class _HomePageState extends State<HomePage> {
 
   /// 打开右上角筛选面板：以底部弹层承载筛选内容，点击调整即时生效。
   void _showFilterSheet() {
-    showModalBottomSheet(
+    showResponsiveSheet(
       context: context,
       isScrollControlled: true,
       builder: (ctx) => StatefulBuilder(
@@ -499,7 +503,6 @@ class _HomePageState extends State<HomePage> {
     final connecting = state == DeviceConnectionState.connecting;
 
     return Card(
-      margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(

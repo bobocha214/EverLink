@@ -642,32 +642,34 @@ class _ModbusPageState extends State<ModbusPage> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx2, setSt) => AlertDialog(
           title: Text('写入地址 $addr'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              TextField(
-                controller: ctl,
-                decoration: const InputDecoration(labelText: '写入值'),
-                keyboardType: TextInputType.number,
-              ),
-              const SizedBox(height: 8),
-              const Text('写入类型', style: TextStyle(fontSize: 13)),
-              RadioListTile<bool>(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('写寄存器 (0x06)'),
-                value: false,
-                groupValue: asCoil,
-                onChanged: (v) => setSt(() => asCoil = v ?? false),
-              ),
-              RadioListTile<bool>(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('强制线圈 (0x05)'),
-                value: true,
-                groupValue: asCoil,
-                onChanged: (v) => setSt(() => asCoil = v ?? false),
-              ),
-            ],
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: ctl,
+                  decoration: const InputDecoration(labelText: '写入值'),
+                  keyboardType: TextInputType.number,
+                ),
+                const SizedBox(height: 8),
+                const Text('写入类型', style: TextStyle(fontSize: 13)),
+                RadioListTile<bool>(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('写寄存器 (0x06)'),
+                  value: false,
+                  groupValue: asCoil,
+                  onChanged: (v) => setSt(() => asCoil = v ?? false),
+                ),
+                RadioListTile<bool>(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('强制线圈 (0x05)'),
+                  value: true,
+                  groupValue: asCoil,
+                  onChanged: (v) => setSt(() => asCoil = v ?? false),
+                ),
+              ],
+            ),
           ),
           actions: [
             TextButton(

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'package:everlink/services/clipboard_history/clipboard_history_manager.dart';
+import 'package:everlink/ui/widgets/responsive_grid.dart';
+import 'package:everlink/ui/widgets/responsive_sheet.dart';
 
 /// 剪贴板管理工具页：本地记录本机所有复制内容（含其它 App），可查看、复制、删除。
 class ClipboardManagerPage extends StatefulWidget {
@@ -32,61 +34,56 @@ class _ClipboardManagerPageState extends State<ClipboardManagerPage> {
   }
 
   void _showDetail(ClipboardHistoryItem item) {
-    showModalBottomSheet(
+    showResponsiveSheet<void>(
       context: context,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (_) => DraggableScrollableSheet(
-        initialChildSize: 0.6,
-        maxChildSize: 0.9,
-        expand: false,
-        builder: (_, scroll) => Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-              child: Row(
-                children: [
-                  _SourceChip(source: item.source),
-                  const Spacer(),
-                  IconButton(
-                    icon: const Icon(Icons.delete_outline, color: Colors.red),
-                    tooltip: '删除',
-                    onPressed: () {
-                      Navigator.pop(context);
-                      manager.remove(item.id);
-                    },
-                  ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: SingleChildScrollView(
-                controller: scroll,
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-                child: SelectableText(
-                  item.text,
-                  style: const TextStyle(fontSize: 14, height: 1.6),
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  icon: const Icon(Icons.copy),
-                  label: const Text('复制到剪贴板'),
+      builder: (_) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: Row(
+              children: [
+                _SourceChip(source: item.source),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline, color: Colors.red),
+                  tooltip: '删除',
                   onPressed: () {
                     Navigator.pop(context);
-                    _copy(item.text);
+                    manager.remove(item.id);
                   },
                 ),
+              ],
+            ),
+          ),
+          ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(context).height * 0.55,
+            ),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+              child: SelectableText(
+                item.text,
+                style: const TextStyle(fontSize: 14, height: 1.6),
               ),
             ),
-          ],
-        ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                icon: const Icon(Icons.copy),
+                label: const Text('复制到剪贴板'),
+                onPressed: () {
+                  Navigator.pop(context);
+                  _copy(item.text);
+                },
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -158,78 +155,79 @@ class _ClipboardManagerPageState extends State<ClipboardManagerPage> {
                       style: TextStyle(color: Colors.grey),
                     ),
                   )
-                : ListView.separated(
+                : SingleChildScrollView(
                     padding: const EdgeInsets.all(10),
-                    itemCount: items.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 8),
-                    itemBuilder: (_, i) {
-                      final item = items[i];
-                      return Card(
-                        margin: EdgeInsets.zero,
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          side: BorderSide(
-                            color: Colors.grey.withValues(alpha: 0.15),
-                          ),
-                        ),
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(12),
-                          onTap: () => _showDetail(item),
-                          child: Padding(
-                            padding: const EdgeInsets.fromLTRB(12, 10, 6, 10),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        item.preview,
-                                        maxLines: 3,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(fontSize: 14),
-                                      ),
-                                      const SizedBox(height: 6),
-                                      Row(
-                                        children: [
-                                          _SourceChip(source: item.source),
-                                          const SizedBox(width: 8),
-                                          Text(
-                                            _timeText(item.time),
-                                            style: const TextStyle(
-                                              fontSize: 11,
-                                              color: Colors.grey,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                IconButton(
-                                  icon: const Icon(Icons.copy, size: 18),
-                                  color: Colors.teal,
-                                  tooltip: '复制',
-                                  onPressed: () => _copy(item.text),
-                                ),
-                                IconButton(
-                                  icon: const Icon(Icons.close, size: 18),
-                                  color: Colors.grey,
-                                  tooltip: '删除',
-                                  onPressed: () => manager.remove(item.id),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      );
-                    },
+                    child: ResponsiveGrid(
+                      spacing: 8,
+                      children: [for (final item in items) _buildItemCard(item)],
+                    ),
                   ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildItemCard(ClipboardHistoryItem item) {
+    return Card(
+      margin: EdgeInsets.zero,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+          color: Colors.grey.withValues(alpha: 0.15),
+        ),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => _showDetail(item),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 6, 10),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.preview,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 14),
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        _SourceChip(source: item.source),
+                        const SizedBox(width: 8),
+                        Text(
+                          _timeText(item.time),
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.copy, size: 18),
+                color: Colors.teal,
+                tooltip: '复制',
+                onPressed: () => _copy(item.text),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close, size: 18),
+                color: Colors.grey,
+                tooltip: '删除',
+                onPressed: () => manager.remove(item.id),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

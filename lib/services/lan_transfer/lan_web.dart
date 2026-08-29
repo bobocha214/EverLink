@@ -138,6 +138,14 @@ const String kLanWebHtml = r'''<!DOCTYPE html>
   }
   .minput-wrap input:focus{border-color:#00897b;background:#fff}
   .minput-wrap input::placeholder{color:#b0bec5}
+  .pinwrap{display:flex;gap:8px;justify-content:center;margin:10px 0 4px}
+  .pinbox{
+    width:38px;height:46px;text-align:center;font-size:22px;font-weight:700;
+    border:1.5px solid #cfd4da;border-radius:10px;outline:none;background:#f8f9fa;
+    transition:border-color .15s,background .15s;caret-color:#00897b;
+  }
+  .pinbox:focus{border-color:#00897b;background:#fff}
+  .pinhint{font-size:11px;color:#78909c;text-align:center;margin-top:2px}
   .merr{
     color:#e53935;font-size:12px;min-height:18px;margin-top:8px;text-align:center;transition:opacity .2s;
   }
@@ -261,9 +269,8 @@ const String kLanWebHtml = r'''<!DOCTYPE html>
       <div class="msub">该频道设置了密码，需要验证后才能进入</div>
     </div>
     <div class="card-body">
-      <div class="minput-wrap">
-        <input id="pwdInput" type="password" maxlength="30" placeholder="请输入频道密码" autocomplete="off">
-      </div>
+      <div class="pinwrap" id="pwdPin"></div>
+      <div class="pinhint">请输入 6 位频道 PIN（验证码样式）</div>
       <div class="merr" id="pwdErr"></div>
     </div>
     <div class="card-foot">
@@ -363,13 +370,51 @@ const String kLanWebHtml = r'''<!DOCTYPE html>
 
   // 频道密码：先查服务端该频道是否需要密码，公共频道无需弹窗。
   var needPwd = false;
+
+  // 验证码式 PIN 输入框（6 个方框）：自动跳格、退格回退、回车提交。
+  var PIN_LEN = 6;
+  function buildPinBoxes(){
+    var wrap = $('pwdPin');
+    if(!wrap) return;
+    wrap.innerHTML = '';
+    for(var i=0;i<PIN_LEN;i++){
+      var b = document.createElement('input');
+      b.className = 'pinbox';
+      b.maxLength = 1;
+      b.inputMode = 'numeric';
+      b.setAttribute('autocomplete','off');
+      b.addEventListener('input', function(){
+        this.value = this.value.replace(/\D/g,'').slice(0,1);
+        if(this.value && this.nextElementSibling) this.nextElementSibling.focus();
+      });
+      b.addEventListener('keydown', function(e){
+        if(e.key === 'Backspace' && !this.value && this.previousElementSibling){
+          this.previousElementSibling.focus();
+        } else if(e.key === 'Enter'){
+          e.preventDefault(); $('pwdOk').click();
+        }
+      });
+      wrap.appendChild(b);
+    }
+  }
+  function getPin(){
+    var boxes = $('pwdPin').querySelectorAll('.pinbox');
+    var s = '';
+    for(var i=0;i<boxes.length;i++) s += boxes[i].value;
+    return s;
+  }
+  function clearPin(){
+    var boxes = $('pwdPin').querySelectorAll('.pinbox');
+    for(var i=0;i<boxes.length;i++) boxes[i].value = '';
+    if(boxes[0]) boxes[0].focus();
+  }
+
   function openPwdModal(){
     $('pwdChName').textContent = CHANNEL;
-    $('pwdInput').value = '';
     $('pwdErr').textContent = '';
     $('pwdOk').disabled = false;
     $('pwdModal').className = 'modal on';
-    setTimeout(function(){ try{ $('pwdInput').focus(); }catch(e){} }, 80);
+    setTimeout(function(){ try{ clearPin(); }catch(e){} }, 80);
   }
   function closePwdModal(){ $('pwdModal').className = 'modal'; }
   $('pwdCancel').onclick = function(){
@@ -385,8 +430,8 @@ const String kLanWebHtml = r'''<!DOCTYPE html>
     }
   };
   $('pwdOk').onclick = function(){
-    var k = $('pwdInput').value.trim();
-    if(!k){ $('pwdErr').textContent = '请输入频道密码'; return; }
+    var k = getPin();
+    if(!k){ $('pwdErr').textContent = '请输入频道 PIN'; return; }
     $('pwdErr').innerHTML = '<span class="mloading">验证中…</span>';
     $('pwdOk').disabled = true;
     fetch('/api/auth?ch=' + encodeURIComponent(CHANNEL) + '&k=' + encodeURIComponent(k))
@@ -397,16 +442,15 @@ const String kLanWebHtml = r'''<!DOCTYPE html>
         } else {
           $('pwdErr').textContent = d.error || '密码不正确';
           $('pwdOk').disabled = false;
-          $('pwdInput').focus();
+          clearPin();
         }
       }).catch(function(){
         $('pwdErr').textContent = '验证请求失败，请检查网络';
         $('pwdOk').disabled = false;
       });
   };
-  $('pwdInput').addEventListener('keydown', function(e){
-    if(e.key === 'Enter'){ e.preventDefault(); $('pwdOk').click(); }
-  });
+  // 初始化验证码式 PIN 输入框（Enter 提交已绑定到每个方框）。
+  buildPinBoxes();
 
   // 连接状态：带超时 + 可重试，避免"首次请求瞬时失败就永久卡在连接中"。
   // 注意：HTML 已能加载说明主机可达，/api/info 与页面同源同地址；

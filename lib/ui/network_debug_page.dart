@@ -5,7 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'package:everlink/services/network_info_service.dart';
+import 'package:everlink/services/settings_service.dart';
 import 'package:everlink/ui/ping_page.dart';
+import 'package:everlink/ui/widgets/responsive_grid.dart';
 import 'package:everlink/ui/widgets/tool_list_card.dart';
 import 'package:everlink/utils/app_routes.dart';
 import 'package:everlink/utils/ip_calc.dart';
@@ -28,19 +30,24 @@ class NetworkDebugPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('网络调试')),
-      body: ListView.separated(
-        padding: const EdgeInsets.all(16),
-        itemCount: _netFuncs.length,
-        separatorBuilder: (_, __) => const SizedBox(height: 12),
-        itemBuilder: (context, i) {
-          final f = _netFuncs[i];
-          return ToolListCard(
-            icon: f.icon,
-            title: f.label,
-            subtitle: f.desc,
-            onTap: () => AppRoutes.push(context, f.page),
-          );
-        },
+      body: SingleChildScrollView(
+        padding: EdgeInsets.only(
+          left: 16,
+          right: 16,
+          top: 16,
+          bottom: 16 + (SettingsService.instance.navFloating ? 100 : 0),
+        ),
+        child: ResponsiveGrid(
+          children: [
+            for (final f in _netFuncs)
+              ToolListCard(
+                icon: f.icon,
+                title: f.label,
+                subtitle: f.desc,
+                onTap: () => AppRoutes.push(context, f.page),
+              ),
+          ],
+        ),
       ),
     );
   }

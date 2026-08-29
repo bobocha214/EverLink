@@ -113,3 +113,9 @@ flutter_launcher_icons:
   adaptive_icon_foreground: "assets/icon/icon_foreground.png"
   remove_alpha_ios: true
   min_sdk_android: 21
+  # Windows：生成 windows/runner/resources/app_icon.ico（Runner.rc / win32_window.cpp 引用 IDI_APP_ICON）。
+  # 256 保证任务栏、Alt-Tab、资源管理器大图标模式下依然清晰（此前未启用，一直是 Flutter 默认图标）。
+  windows:
+    generate: true
+    image_path: "assets/icon/icon_source.png"
+    icon_size: 256

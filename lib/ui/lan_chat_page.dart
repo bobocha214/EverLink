@@ -510,16 +510,18 @@ class _LanChatPageState extends State<LanChatPage> {
       context: context,
       builder: (d) => AlertDialog(
         title: Text(f.name, style: const TextStyle(fontSize: 16)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('大小：${f.sizeText}'),
-            const SizedBox(height: 6),
-            const Text('保存位置', style: TextStyle(fontWeight: FontWeight.w600)),
-            const SizedBox(height: 2),
-            SelectableText(f.savedPath, style: const TextStyle(fontSize: 12)),
-          ],
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('大小：${f.sizeText}'),
+              const SizedBox(height: 6),
+              const Text('保存位置', style: TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 2),
+              SelectableText(f.savedPath, style: const TextStyle(fontSize: 12)),
+            ],
+          ),
         ),
         actions: [
           TextButton(

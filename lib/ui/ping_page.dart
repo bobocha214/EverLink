@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import 'package:everlink/services/ping_history_service.dart';
+import 'package:everlink/ui/widgets/responsive_sheet.dart';
 
 /// 单次 Ping 的结果（一条 ICMP 回显应答或一次超时/不可达）。
 class _PingResult {
@@ -257,7 +258,7 @@ class _PingPageState extends State<PingPage> {
 
   /// 打开历史记录弹窗：查看过往 Ping 记录，支持单条删除与清空。
   void _openHistory(BuildContext context) {
-    showModalBottomSheet(
+    showResponsiveSheet(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
@@ -265,85 +266,82 @@ class _PingPageState extends State<PingPage> {
         listenable: PingHistoryService.instance,
         builder: (_, _) {
           final records = PingHistoryService.instance.records;
-          return DraggableScrollableSheet(
-            initialChildSize: 0.7,
-            maxChildSize: 0.9,
-            minChildSize: 0.4,
-            expand: false,
-            builder: (_, scrollController) => Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
-                  child: Row(
-                    children: [
-                      const Expanded(
-                        child: Text('Ping 历史记录',
-                            style: TextStyle(
-                                fontSize: 16, fontWeight: FontWeight.bold)),
-                      ),
-                      TextButton.icon(
-                        icon: const Icon(Icons.delete_sweep, size: 18),
-                        label: const Text('清空'),
-                        onPressed: records.isEmpty
-                            ? null
-                            : () async {
-                                final ok = await showDialog<bool>(
-                                  context: sheetContext,
-                                  builder: (d) => AlertDialog(
-                                    title: const Text('清空历史记录'),
-                                    content: const Text(
-                                        '将删除全部 Ping 历史记录，且不可恢复。'),
-                                    actions: [
-                                      TextButton(
-                                        onPressed: () =>
-                                            Navigator.of(d).pop(false),
-                                        child: const Text('取消'),
-                                      ),
-                                      FilledButton(
-                                        onPressed: () =>
-                                            Navigator.of(d).pop(true),
-                                        child: const Text('清空'),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                                if (ok == true) {
-                                  PingHistoryService.instance.clear();
-                                }
-                              },
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close),
-                        onPressed: () => Navigator.of(sheetContext).pop(),
-                      ),
-                    ],
-                  ),
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
+                child: Row(
+                  children: [
+                    const Expanded(
+                      child: Text('Ping 历史记录',
+                          style: TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.bold)),
+                    ),
+                    TextButton.icon(
+                      icon: const Icon(Icons.delete_sweep, size: 18),
+                      label: const Text('清空'),
+                      onPressed: records.isEmpty
+                          ? null
+                          : () async {
+                              final ok = await showDialog<bool>(
+                                context: sheetContext,
+                                builder: (d) => AlertDialog(
+                                  title: const Text('清空历史记录'),
+                                  content: const Text(
+                                      '将删除全部 Ping 历史记录，且不可恢复。'),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () =>
+                                          Navigator.of(d).pop(false),
+                                      child: const Text('取消'),
+                                    ),
+                                    FilledButton(
+                                      onPressed: () =>
+                                          Navigator.of(d).pop(true),
+                                      child: const Text('清空'),
+                                    ),
+                                  ],
+                                ),
+                              );
+                              if (ok == true) {
+                                PingHistoryService.instance.clear();
+                              }
+                            },
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.of(sheetContext).pop(),
+                    ),
+                  ],
                 ),
-                const Divider(height: 1),
-                Expanded(
-                  child: records.isEmpty
-                      ? const Center(
-                          child: Text('暂无历史记录',
-                              style: TextStyle(color: Colors.grey)),
-                        )
-                      : ListView.separated(
-                          controller: scrollController,
-                          padding: const EdgeInsets.all(12),
-                          itemCount: records.length,
-                          separatorBuilder: (_, _) => const SizedBox(height: 8),
-                          itemBuilder: (_, i) {
-                            final r = records[i];
-                            return _HistoryTile(
-                              record: r,
-                              onTap: () => _showRecordDetail(sheetContext, r),
-                              onDelete: () =>
-                                  PingHistoryService.instance.removeAt(i),
-                            );
-                          },
-                        ),
+              ),
+              const Divider(height: 1),
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.6,
                 ),
-              ],
-            ),
+                child: records.isEmpty
+                    ? const Center(
+                        child: Text('暂无历史记录',
+                            style: TextStyle(color: Colors.grey)),
+                      )
+                    : ListView.separated(
+                        padding: const EdgeInsets.all(12),
+                        itemCount: records.length,
+                        separatorBuilder: (_, _) => const SizedBox(height: 8),
+                        itemBuilder: (_, i) {
+                          final r = records[i];
+                          return _HistoryTile(
+                            record: r,
+                            onTap: () => _showRecordDetail(sheetContext, r),
+                            onDelete: () =>
+                                PingHistoryService.instance.removeAt(i),
+                          );
+                        },
+                      ),
+              ),
+            ],
           );
         },
       ),

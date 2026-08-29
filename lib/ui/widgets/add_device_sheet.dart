@@ -6,12 +6,13 @@ import 'package:everlink/models/protocol_type.dart';
 import 'package:everlink/protocols/protocol_registry.dart';
 import 'package:everlink/services/session_manager.dart';
 import 'package:everlink/services/settings_service.dart';
+import 'package:everlink/ui/widgets/responsive_sheet.dart';
 
 /// 添加设备流程：先选协议类型，再填写设备名称与连接参数，保存后【不会自动
 /// 连接】——由用户在设备详情页手动连接 / 断开。地址字段允许留空，保存时不会
 /// 因空值而报错。
 Future<DeviceSession?> showAddDeviceSheet(BuildContext context) async {
-  return showModalBottomSheet<DeviceSession>(
+  return showResponsiveSheet<DeviceSession>(
     context: context,
     isScrollControlled: true,
     builder: (_) => const _AddDeviceSheet(),

@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 import 'package:everlink/services/lan_transfer/lan_models.dart';
 import 'package:everlink/services/lan_transfer/lan_transfer_manager.dart';
 import 'package:everlink/ui/lan_chat_page.dart';
+import 'package:everlink/ui/widgets/pin_input.dart';
+import 'package:everlink/ui/widgets/responsive_sheet.dart';
 import 'package:everlink/utils/app_routes.dart';
 
 /// 快传管理页：频道与设备的列表入口。
@@ -149,43 +151,45 @@ class _LanTransferPageState extends State<LanTransferPage> {
       builder: (d) => StatefulBuilder(
         builder: (_, setLocal) => AlertDialog(
           title: const Text('选择对外 IP'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                '对方扫码或访问网页将使用此地址。选择具体 IP 可限定只在该网卡上监听。',
-                style: TextStyle(fontSize: 12, color: Colors.grey),
-              ),
-              const SizedBox(height: 12),
-              InputDecorator(
-                decoration: const InputDecoration(
-                  labelText: '对外 IP',
-                  isDense: true,
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '对方扫码或访问网页将使用此地址。选择具体 IP 可限定只在该网卡上监听。',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
                 ),
-                child: DropdownButton<String?>(
-                  value: picked,
-                  isExpanded: true,
-                  isDense: true,
-                  underline: const SizedBox.shrink(),
-                  items: [
-                    const DropdownMenuItem(
-                      value: null,
-                      child: Text('全部接口（自动主地址）'),
-                    ),
-                    for (final a in addrs)
-                      DropdownMenuItem(
-                        value: a['ip'] as String,
-                        child: Text(
-                          '${a['ip']}  ${a['type'] ?? ''}',
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                const SizedBox(height: 12),
+                InputDecorator(
+                  decoration: const InputDecoration(
+                    labelText: '对外 IP',
+                    isDense: true,
+                  ),
+                  child: DropdownButton<String?>(
+                    value: picked,
+                    isExpanded: true,
+                    isDense: true,
+                    underline: const SizedBox.shrink(),
+                    items: [
+                      const DropdownMenuItem(
+                        value: null,
+                        child: Text('全部接口（自动主地址）'),
                       ),
-                  ],
-                  onChanged: (v) => setLocal(() => picked = v),
+                      for (final a in addrs)
+                        DropdownMenuItem(
+                          value: a['ip'] as String,
+                          child: Text(
+                            '${a['ip']}  ${a['type'] ?? ''}',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                    ],
+                    onChanged: (v) => setLocal(() => picked = v),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
           actions: [
             TextButton(
@@ -727,6 +731,14 @@ class _LanTransferPageState extends State<LanTransferPage> {
                   style: const TextStyle(fontSize: 11, color: Colors.grey),
                 ),
               ),
+            // 私有频道：持有者可直接查看 / 复制频道密码（PIN）。
+            if (c.isPrivate)
+              IconButton(
+                icon: const Icon(Icons.visibility_outlined, size: 20),
+                color: Colors.orange,
+                tooltip: '查看频道密码',
+                onPressed: () => _showChannelPassword(c),
+              ),
             // 每个频道卡片上直接放二维码图标，点击弹出该频道的二维码。
             IconButton(
               icon: const Icon(Icons.qr_code_2, size: 20),
@@ -736,11 +748,22 @@ class _LanTransferPageState extends State<LanTransferPage> {
                   ? () => _showQrForChannel(c.name)
                   : null,
             ),
+            // 自己创建的频道：提供删除入口（退出用长按，二者并存）。
+            if (manager.isChannelOwned(c.name))
+              IconButton(
+                icon: const Icon(Icons.delete_outline, size: 20),
+                color: Colors.red,
+                tooltip: '删除频道',
+                onPressed: () => _confirmDelete(c.name),
+              ),
           ],
         ),
         onTap: () => _enterChat(ChatTarget.channel(c.name)),
-        onLongPress:
-            c.name == kPublicChannel ? null : () => _confirmLeave(c.name),
+        onLongPress: c.name == kPublicChannel
+            ? null
+            : () => manager.isChannelOwned(c.name)
+                ? _confirmDelete(c.name)
+                : _confirmLeave(c.name),
       ),
     );
   }
@@ -863,39 +886,80 @@ class _LanTransferPageState extends State<LanTransferPage> {
 
   Future<void> _joinChannelDialog() async {
     final nameCtl = TextEditingController();
-    final pwdCtl = TextEditingController();
+    final pinCtl = TextEditingController();
     var private = false;
+    var pin = '';
+    var pinEdited = false;
     final ok = await showDialog<bool>(
       context: context,
       builder: (d) => StatefulBuilder(
         builder: (_, setLocal) => AlertDialog(
           title: const Text('加入 / 创建频道'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameCtl,
-                autofocus: true,
-                maxLength: 20,
-                decoration: const InputDecoration(
-                  labelText: '频道名称',
-                  hintText: '如：项目组',
-                ),
-              ),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                value: private,
-                title: const Text('私有频道', style: TextStyle(fontSize: 14)),
-                subtitle: const Text('需密码才能加入，内容加扰传输',
-                    style: TextStyle(fontSize: 11)),
-                onChanged: (v) => setLocal(() => private = v),
-              ),
-              if (private)
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
                 TextField(
-                  controller: pwdCtl,
-                  decoration: const InputDecoration(labelText: '频道密码'),
+                  controller: nameCtl,
+                  autofocus: true,
+                  maxLength: 20,
+                  decoration: const InputDecoration(
+                    labelText: '频道名称',
+                    hintText: '如：项目组',
+                  ),
                 ),
-            ],
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: private,
+                  title: const Text('私有频道', style: TextStyle(fontSize: 14)),
+                  subtitle: const Text('需 PIN 才能加入，内容加扰传输',
+                      style: TextStyle(fontSize: 11)),
+                  onChanged: (v) => setLocal(() {
+                    private = v;
+                    // 开启私有频道时自动生成一个 PIN，方便持有者直接分享。
+                    if (v && pin.isEmpty) {
+                      pin = manager.generateChannelPin();
+                      pinCtl.text = pin;
+                    }
+                  }),
+                ),
+                if (private) ...[
+                  const SizedBox(height: 8),
+                  PinInputWidget(
+                    controller: pinCtl,
+                    onChanged: (v) {
+                      pin = v;
+                      // 用户手动输入 PIN 视为加入他人频道；保留自动生成的 PIN 才表示本机创建。
+                      pinEdited = true;
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      TextButton.icon(
+                        icon: const Icon(Icons.refresh, size: 16),
+                        label: const Text('随机生成'),
+                        onPressed: () => setLocal(() {
+                          pin = manager.generateChannelPin();
+                          pinCtl.text = pin;
+                        }),
+                      ),
+                      const Spacer(),
+                      TextButton.icon(
+                        icon: const Icon(Icons.copy, size: 16),
+                        label: const Text('复制'),
+                        onPressed: pin.isEmpty ? null : () => _copyText(pin),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    '把此 PIN 告知想加入的人，对方输入相同 PIN 即可配对，内容也会加扰。',
+                    style: TextStyle(fontSize: 11, color: Colors.grey),
+                  ),
+                ],
+              ],
+            ),
           ),
           actions: [
             TextButton(
@@ -912,15 +976,52 @@ class _LanTransferPageState extends State<LanTransferPage> {
     if (ok != true) return;
     final name = nameCtl.text.trim();
     if (name.isEmpty) return;
-    final pwd = private ? pwdCtl.text : '';
+    final pwd = private ? pin : '';
     if (private && pwd.isEmpty) {
-      _toast('私有频道必须设置密码');
+      _toast('私有频道必须设置 PIN');
       return;
     }
-    await manager.joinChannel(name, pwd);
+    // 私有频道且 PIN 为自动生成（未被手动改动）时，本机即持有者，可删除。
+    final owned = private && !pinEdited;
+    await manager.joinChannel(name, pwd, owned: owned);
     if (!mounted) return;
     // 加入后直接进入该频道的聊天页
     _enterChat(ChatTarget.channel(name));
+  }
+
+  /// 持有者查看 / 复制私有频道密码（PIN）。
+  void _showChannelPassword(LanChannel c) {
+    final pwd = manager.channelPassword(c.name) ?? '';
+    final ctl = TextEditingController(text: pwd);
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text('频道「${c.name}」密码'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            PinInputWidget(controller: ctl, enabled: false),
+            const SizedBox(height: 12),
+            const Text('将此 PIN 告知想加入的人，对方输入相同 PIN 即可配对。',
+                style: TextStyle(fontSize: 12, color: Colors.grey)),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('关闭'),
+          ),
+          FilledButton.icon(
+            icon: const Icon(Icons.copy),
+            label: const Text('复制'),
+            onPressed: () {
+              _copyText(pwd);
+              if (mounted) Navigator.pop(context);
+            },
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _confirmLeave(String name) async {
@@ -941,6 +1042,30 @@ class _LanTransferPageState extends State<LanTransferPage> {
     );
     if (ok != true) return;
     await manager.leaveChannel(name);
+  }
+
+  Future<void> _confirmDelete(String name) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (d) => AlertDialog(
+        title: Text('删除频道「$name」'),
+        content: const Text('删除后会退出该频道，并一并清除本机中该频道的聊天记录，此操作不可撤销。'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(d, false),
+              child: const Text('取消')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(d, true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await manager.deleteChannel(name);
+    if (!mounted) return;
+    _toast('已删除频道「$name」');
   }
 
   Future<void> _addDeviceManually() async {
@@ -1010,36 +1135,22 @@ class _LanTransferPageState extends State<LanTransferPage> {
   }
 
   void _showHelp() {
-    showModalBottomSheet(
+    showResponsiveSheet(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (ctx) => DraggableScrollableSheet(
-        initialChildSize: 0.72,
-        maxChildSize: 0.92,
-        expand: false,
-        builder: (_, scroll) => ListView(
-          controller: scroll,
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+      builder: (ctx) => SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            const SizedBox(height: 14),
             const Text('快传使用说明',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 14),
             _helpTile(Icons.tag, '频道管理',
-                '在频道列表中点击某个频道即可进入聊天。点击频道右侧的二维码图标可展示该频道的二维码。长按频道可退出（公共频道除外）。点击右下角按钮可创建或加入新频道。'),
+                '在频道列表中点击某个频道即可进入聊天。点击频道右侧的二维码图标可展示该频道的二维码。长按频道可退出；自己创建的频道（私有频道且 PIN 由本机生成）可删除，会一并清除本机聊天记录（公共频道除外）。点击右下角按钮可创建或加入新频道。'),
             _helpTile(Icons.qr_code_2, '每个频道一个二维码',
                 '频道卡片上的二维码图标生成的是该频道专属链接；对方扫码后用浏览器打开，若为私有频道需输入密码才能加入。二维码可保存为图片分享。'),
             _helpTile(Icons.smartphone, '点对点直发',

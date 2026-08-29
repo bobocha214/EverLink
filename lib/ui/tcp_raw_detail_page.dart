@@ -12,6 +12,7 @@ import 'package:everlink/services/connection_manager.dart';
 import 'package:everlink/services/session_manager.dart';
 import 'package:everlink/services/tcp_history_service.dart';
 import 'package:everlink/services/tcp_log_store.dart';
+import 'package:everlink/ui/widgets/responsive_sheet.dart';
 
 /// TCP 原始连接设备详情页。
 ///
@@ -408,7 +409,7 @@ class _TcpRawDetailPageState extends State<TcpRawDetailPage> {
 
   /// 右上角「历史连接」弹层：查看 / 切回 / 删除历史。
   void _openHistory() {
-    showModalBottomSheet<void>(
+    showResponsiveSheet<void>(
       context: context,
       useSafeArea: true,
       builder: (ctx) {
@@ -416,9 +417,11 @@ class _TcpRawDetailPageState extends State<TcpRawDetailPage> {
           builder: (ctx2, setSheet) {
             final scheme = Theme.of(ctx2).colorScheme;
             return SafeArea(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 16, 8, 8),
                     child: Row(
@@ -476,7 +479,8 @@ class _TcpRawDetailPageState extends State<TcpRawDetailPage> {
                     ),
                 ],
               ),
-            );
+            ),
+          );
           },
         );
       },

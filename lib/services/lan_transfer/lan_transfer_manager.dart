@@ -21,6 +21,7 @@ class LanTransferManager extends ChangeNotifier {
 
   static const _kNameKey = 'lan_self_name';
   static const _kChannelsKey = 'lan_channels';
+  static const _kOwnedChannelsKey = 'lan_owned_channels';
   static const _kMessagesKey = 'lan_messages';
   static const _kPortKey = 'lan_transfer_port';
   static const _kBindIpKey = 'lan_bind_ip';
@@ -53,6 +54,8 @@ class LanTransferManager extends ChangeNotifier {
 
   /// 已加入的频道：频道名 -> 密码（公共频道密码为空）。
   final Map<String, String> _channels = {kPublicChannel: ''};
+  /// 自己创建的频道（持有者），仅这些频道支持删除。公共频道恒不在其中。
+  final Set<String> _ownedChannels = {};
 
   bool get isRunning => _running;
   String get selfId => _selfId;
@@ -312,24 +315,54 @@ class LanTransferManager extends ChangeNotifier {
 
   // ---------------------------------------------------------------- 频道
 
+  /// 是否自己创建的频道（持有者可删除）。公共频道恒为 false。
+  bool isChannelOwned(String name) => _ownedChannels.contains(name);
+
   /// 加入 / 创建频道（密码为空即公共频道）。仅 App 端可调用。
-  Future<void> joinChannel(String name, String password) async {
+  /// [owned] 为 true 时标记为本机创建的频道，支持删除（用于私有频道由本机设 PIN 的场景）。
+  Future<void> joinChannel(String name, String password,
+      {bool owned = false}) async {
     final key = name.trim();
     if (key.isEmpty) return;
     _channels[key] = password;
+    if (owned) _ownedChannels.add(key);
     await _saveChannels();
+    await _saveOwnedChannels();
     notifyListeners();
   }
 
-  /// 退出频道（默认公共频道不可退出）。
+  /// 退出频道（默认公共频道不可退出）。会同时清除持有者标记。
   Future<void> leaveChannel(String name) async {
     if (name == kPublicChannel) return;
     if (_channels.remove(name) == null) return;
+    _ownedChannels.remove(name);
     await _saveChannels();
+    await _saveOwnedChannels();
+    notifyListeners();
+  }
+
+  /// 删除自己创建的频道（仅非公共频道且本机为持有者）。
+  /// 删除后同时清除该频道的本地聊天记录（不可撤销）。
+  Future<void> deleteChannel(String name) async {
+    if (name == kPublicChannel) return;
+    if (!_ownedChannels.contains(name)) return;
+    _channels.remove(name);
+    _ownedChannels.remove(name);
+    _messages.removeWhere((m) => m.channel == name);
+    await _saveChannels();
+    await _saveOwnedChannels();
+    _saveMessages();
     notifyListeners();
   }
 
   String? channelPassword(String name) => _channels[name];
+
+  /// 生成一个 [len] 位数字频道 PIN（作为私有频道密码使用）。
+  /// 仅包含数字，便于在验证码式矩形框中输入与口述。
+  String generateChannelPin({int len = 6}) {
+    final r = Random();
+    return List.generate(len, (_) => r.nextInt(10)).join();
+  }
 
   /// 频道对应的网页地址：带频道名与私有频道密码，供二维码使用。
   /// 对方扫码后直接进入该频道，无需（也无法）在网页端自行设置频道。
@@ -417,6 +450,15 @@ class LanTransferManager extends ChangeNotifier {
         m.forEach((k, v) => _channels[k] = v as String? ?? '');
         _channels[kPublicChannel] = '';
       }
+      final ownedRaw = sp.getString(_kOwnedChannelsKey);
+      if (ownedRaw != null && ownedRaw.isNotEmpty) {
+        final list = jsonDecode(ownedRaw) as List;
+        for (final e in list) {
+          if (e is String && e != kPublicChannel) _ownedChannels.add(e);
+        }
+        // 持有者必须仍在已加入频道里，否则视为已退出。
+        _ownedChannels.removeWhere((n) => !_channels.containsKey(n));
+      }
     } catch (_) {}
     if (_selfName.isEmpty) {
       _selfName = '${_defaultNamePrefix()}-${_shortId()}';
@@ -427,6 +469,14 @@ class LanTransferManager extends ChangeNotifier {
     try {
       final sp = await SharedPreferences.getInstance();
       await sp.setString(_kChannelsKey, jsonEncode(_channels));
+    } catch (_) {}
+  }
+
+  Future<void> _saveOwnedChannels() async {
+    try {
+      final sp = await SharedPreferences.getInstance();
+      await sp.setString(
+          _kOwnedChannelsKey, jsonEncode(_ownedChannels.toList()));
     } catch (_) {}
   }
 
