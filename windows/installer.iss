@@ -39,7 +39,7 @@ DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
 OutputDir=..\..\build\windows\installer
 OutputBaseFilename=EverLink-{#MyAppVersion}-windows-x64-setup
-SetupIconFile=..\runner\resources\app_icon.ico
+SetupIconFile=runner\resources\app_icon.ico
 UninstallDisplayIcon={app}\everlink.exe
 UninstallDisplayName={#MyAppName}
 ; Install to Program Files (64-bit); standard admin install, app runs as normal user.
