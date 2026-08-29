@@ -1,7 +1,7 @@
 ; EverLink Windows Installer — Inno Setup 6
 ;
 ; Compiles the `flutter build windows --release` output into
-;   EverLink-Setup-{version}.exe
+;   EverLink-{version}-windows-x64-setup.exe
 ;
 ; On the CI windows-latest runner, Inno Setup 6 is pre-installed at:
 ;   C:\Program Files (x86)\Inno Setup 6\ISCC.exe
@@ -38,7 +38,7 @@ DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
 OutputDir=..\..\build\windows\installer
-OutputBaseFilename=EverLink-Setup-{#MyAppVersion}
+OutputBaseFilename=EverLink-{#MyAppVersion}-windows-x64-setup
 SetupIconFile=..\runner\resources\app_icon.ico
 UninstallDisplayIcon={app}\everlink.exe
 UninstallDisplayName={#MyAppName}

@@ -1,8 +1,10 @@
 name: Build Release
 
-# 推送任意 tag（如 v1.0.0 / 1.0.0 / 1.1.0）时，自动构建并发布到 GitHub Release：
-#   - Android：签名 Release APK（ubuntu-latest）
-#   - Windows：安装包 EverLink-Setup-*.exe + 便携版 EverLink-Portable-*.zip（windows-latest）
+# 推送任意 tag（如 v1.0.0 / 1.0.0 / 1.1.0）时，自动构建并发布到 GitHub Release。
+# 所有产物统一命名：EverLink-<版本>-<平台>[-<arch>].<ext>（参考 VSCode/Electron 风格）：
+#   - Android：EverLink-<ver>-android.apk / EverLink-<ver>-android-<abi>.apk（ubuntu-latest）
+#   - Windows：EverLink-<ver>-windows-x64-setup.exe + EverLink-<ver>-windows-x64-portable.zip（windows-latest）
+#   - iOS    ：EverLink-<ver>-ios.ipa（macos-latest，未签名，需自行重签才能装真机）
 # 更新检查（UpdateService）会从该 Release 读取版本与各平台下载地址。
 # 注意：tag 名称需与 pubspec.yaml 的 version 字段一致（如代码是 1.1.0，则打 tag 1.1.0 或 v1.1.0）。
 on:
@@ -133,8 +135,8 @@ jobs:
           # 自动从本次 tag 的提交生成更新说明（UpdateService 会作为 notes 展示）
           generate_release_notes: true
           # Flutter Gradle 插件把 APK 输出到仓库根的 build/app/outputs/flutter-apk/，
-          # 不是 android/app/build/。renameEverLinkApk 任务在此目录重命名为 EverLink-*.apk。
-          files: build/app/outputs/flutter-apk/EverLink-*.apk
+          # 不是 android/app/build/。renameEverLinkApk 任务在此目录重命名为 EverLink-*-android*.apk。
+          files: build/app/outputs/flutter-apk/EverLink-*-android*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -166,17 +168,16 @@ jobs:
       - name: Build Windows release
         run: flutter build windows --release
 
-      # 安装包：windows-latest 镜像不一定预装 Inno Setup 6，缺失时通过 Chocolatey 安装
-      # （镜像自带 choco）。/DMyAppVersion 注入版本号；/O 用绝对路径，确保产物落到
-      # 仓库根 build\windows\installer，与下方 Publish 步骤的 files 路径一致
-      # （ISCC 的 /O 相对脚本目录解析，相对写法会把 exe 落到 windows/build/... 导致发版找不到）。
-      # 用 Start-Process + 重定向捕获 ISCC 全部输出，规避 GUI 子系统 exe 经 PowerShell & 调用时 stdout 丢失。
+      # 安装包：windows-latest 预装 Inno Setup 6（C:\Program Files (x86)\Inno Setup 6\ISCC.exe）。
+      # /DMyAppVersion 注入版本号；/O 用绝对路径，确保产物落到仓库根 build\windows\installer，
+      # 与下方 Publish 步骤的 files 路径一致。ISCC 是控制台程序，用 `& ... *> log` 把全部流
+      # 重定向到日志文件再打印，规避此前经 Start-Process 重定向导致 stdout 丢失、出现"没日志"的问题。
       - name: Build installer (exe)
         shell: pwsh
         env:
           APPVER: ${{ steps.ver.outputs.version }}
         run: |
-          $ErrorActionPreference = "Continue"
+          $ErrorActionPreference = "Stop"
           $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
           if (-not (Test-Path $iscc)) { $iscc = "C:\Program Files\Inno Setup 6\ISCC.exe" }
           if (-not (Test-Path $iscc)) {
@@ -198,16 +199,30 @@ jobs:
             Write-Error "flutter build windows 未产出 Release 目录：$relDir"; exit 1
           }
 
-          $stdout = Join-Path $env:TEMP "iscc_out.txt"
-          $stderr = Join-Path $env:TEMP "iscc_err.txt"
-          $p = Start-Process -FilePath $iscc -ArgumentList "windows\installer.iss","/DMyAppVersion=$env:APPVER","/O$outDir" `
-            -Wait -PassThru -NoNewWindow -RedirectStandardOutput $stdout -RedirectStandardError $stderr
-          Write-Host "=== ISCC stdout ==="; if (Test-Path $stdout) { Get-Content $stdout -Raw }
-          Write-Host "=== ISCC stderr ==="; if (Test-Path $stderr) { Get-Content $stderr -Raw }
-          $exePath = Join-Path $outDir "EverLink-Setup-$env:APPVER.exe"
-          if ($p.ExitCode -ne 0) { Write-Error "iscc 失败 (exit $($p.ExitCode))"; exit 1 }
+          $log = Join-Path $outDir "iscc_build.log"
+          & $iscc "windows\installer.iss" "/DMyAppVersion=$env:APPVER" "/O$outDir" *> $log
+          $ec = $LASTEXITCODE
+          Write-Host "=== ISCC 完整日志 (exit=$ec) ==="
+          if (Test-Path $log) { Get-Content $log -Raw }
+          $exePath = Join-Path $outDir "EverLink-$env:APPVER-windows-x64-setup.exe"
+          if ($ec -ne 0) { Write-Error "iscc 失败 (exit $ec)，详见上方日志"; exit 1 }
           if (-not (Test-Path $exePath)) { Write-Error "iscc 退出码 0 但未找到产物：$exePath"; exit 1 }
           Write-Host "安装包已生成: $exePath"
+
+      # 无论 installer/portable 成功或失败，都输出关键目录与 ISCC 日志，便于从 CI 日志定位真因。
+      - name: Diagnostics — Windows build state
+        if: always()
+        shell: pwsh
+        run: |
+          Write-Host "== installer 输出目录 =="
+          if (Test-Path "build\windows\installer") { Get-ChildItem "build\windows\installer" | Format-Table Name, Length }
+          else { Write-Host "(无 build\windows\installer)" }
+          Write-Host "== Release 目录前 30 项 =="
+          if (Test-Path "build\windows\x64\runner\Release") { Get-ChildItem "build\windows\x64\runner\Release" | Select-Object -First 30 | Format-Table Name, Length }
+          else { Write-Host "(无 Release 目录 -> flutter build windows 未成功)" }
+          Write-Host "== ISCC 日志 =="
+          if (Test-Path "build\windows\installer\iscc_build.log") { Get-Content "build\windows\installer\iscc_build.log" -Raw }
+          else { Write-Host "(无 iscc_build.log)" }
 
       - name: Package portable zip
         shell: pwsh
@@ -220,7 +235,63 @@ jobs:
         with:
           # 首个（APK）job 已生成 Release 说明；此处仅追加 Windows 附件。
           files: |
-            build/windows/installer/EverLink-Setup-*.exe
-            build/windows/installer/EverLink-Portable-*.zip
+            build/windows/installer/EverLink-*-windows-x64-setup.exe
+            build/windows/installer/EverLink-*-windows-x64-portable.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-ios:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter (3.44.1)
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.1'
+          channel: 'stable'
+          cache: true
+
+      # tag 可能为 v1.1.4 或 1.1.4，去掉前缀 v。
+      - name: Derive version from tag
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Flutter pub get
+        run: flutter pub get
+
+      # macOS runner 预装 CocoaPods；flutter build ios 会自动执行 pod install。
+      # --no-codesign 产出未签名 Runner.app（无需 Apple 证书即可构建）。
+      - name: Build iOS app (release, unsigned)
+        run: flutter build ios --release --no-codesign
+
+      # 手工打包未签名 IPA：将 Runner.app 放入 Payload 目录后压缩为 .ipa。
+      # 命名统一为 EverLink-{version}-ios.ipa，与 Android/Windows 一致。
+      # 说明：未签名 IPA 无法直接安装到真机，需自行重签（如企业证书 / fastlane）。
+      #   若已配置 Apple 签名 Secrets（IOS_P12_BASE64 / IOS_P12_PASSWORD / IOS_PROFILE_BASE64），
+      #   可改为 `flutter build ipa --export-options-plist=ios/ExportOptions.plist` 产出已签名 IPA。
+      - name: Package IPA
+        env:
+          APPVER: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          APP="build/ios/iphoneos/Runner.app"
+          if [ ! -d "$APP" ]; then
+            echo "::error::flutter build ios 未产出 Runner.app（期望路径：$APP）"
+            exit 1
+          fi
+          rm -rf Payload
+          mkdir -p Payload
+          cp -r "$APP" Payload/
+          zip -r "EverLink-${APPVER}-ios.ipa" Payload
+          rm -rf Payload
+          ls -la "EverLink-${APPVER}-ios.ipa"
+
+      - name: Publish to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          # 首个 job 已生成 Release 说明；此处仅追加 iOS 附件。
+          files: EverLink-*-ios.ipa
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

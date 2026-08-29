@@ -82,11 +82,11 @@ def sync_update_json(version: str, build: int, notes: str | None) -> None:
     data.setdefault("downloadUrls", {})
     data["downloadUrls"]["github"] = (
         f"https://github.com/bobocha214/everlink/releases/download/"
-        f"v{version}/EverLink-v{version}.apk"
+        f"v{version}/EverLink-{version}-android.apk"
     )
     data["downloadUrls"]["gitee"] = (
         f"https://gitee.com/zhiyu_214/ever-link/releases/download/"
-        f"v{version}/EverLink-v{version}.apk"
+        f"v{version}/EverLink-{version}-android.apk"
     )
     if notes:
         data["notes"] = notes
@@ -145,7 +145,7 @@ def main() -> None:
         print(f"推送失败：{r.stderr.strip()}")
         print(f"tag {tag} 已在本地，稍后手动执行：git push --follow-tags")
         sys.exit(1)
-    print(f"✓ 已推送 {tag}，CI 将自动构建并发布 Release（APK: EverLink-v{new_ver}.apk）")
+    print(f"✓ 已推送 {tag}，CI 将自动构建并发布 Release（APK: EverLink-{new_ver}-android.apk）")
 
 
 if __name__ == "__main__":

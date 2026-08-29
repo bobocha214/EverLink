@@ -69,12 +69,14 @@ android {
 
 }
 
-// 输出的 APK 文件名统一为 EverLink-<版本号>.apk（如 EverLink-1.0.0.apk）。
+// 输出文件名统一遵循「EverLink-<版本号>-<平台>[-<abi>].ext」命名（参考 VSCode/Electron 风格）：
+//   Android 通用包 app-release.apk         -> EverLink-<ver>-android.apk
+//   Android 按 ABI  app-<abi>-release.apk  -> EverLink-<ver>-android-<abi>.apk
 // AGP 9 已彻底移除旧的 applicationVariants / BaseVariantOutput.outputFileName API，
 // 其替代的 VariantOutput.outputFileName 在本版本(9.0.1)也解析不到，故不依赖脆弱的
 // variant API，改用 assembleRelease 之后的重命名任务：
-//   通用包 app-release.apk               -> EverLink-<ver>.apk
-//   按 ABI 拆分 app-<abi>-release.apk    -> EverLink-<ver>-<abi>.apk
+//   通用包 app-release.apk               -> EverLink-<ver>-android.apk
+//   按 ABI 拆分 app-<abi>-release.apk    -> EverLink-<ver>-android-<abi>.apk
 // 注意：Flutter Gradle 插件把 APK 输出到 **Flutter 项目根**的 build/ 目录
 // （即仓库根 build/app/outputs/flutter-apk/），而非 :app 模块的 build/
 // （android/app/build/）。layout.buildDirectory 指向后者，导致重命名任务找不到 APK。
@@ -95,10 +97,10 @@ tasks.register("renameEverLinkApk") {
             outDir.listFiles { f -> f.extension == "apk" }?.forEach { apk ->
                 val newName = when (val n = apk.name) {
                     "app-release.apk" ->
-                        "EverLink-$everlinkApkVersion.apk"
+                        "EverLink-$everlinkApkVersion-android.apk"
                     else ->
                         if (n.endsWith("-release.apk"))
-                            "EverLink-$everlinkApkVersion-${n.removePrefix("app-").removeSuffix("-release.apk")}.apk"
+                            "EverLink-$everlinkApkVersion-android-${n.removePrefix("app-").removeSuffix("-release.apk")}.apk"
                         else n
                 }
                 val target = File(outDir, newName)

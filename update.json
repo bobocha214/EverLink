@@ -1,9 +1,9 @@
 {
-  "version": "1.2.1",
-  "build": 11,
+  "version": "1.2.0",
+  "build": 12,
   "downloadUrls": {
-    "github": "https://github.com/bobocha214/everlink/releases/download/v1.2.1/EverLink-v1.2.1.apk",
-    "gitee": "https://gitee.com/zhiyu_214/ever-link/releases/download/v1.2.1/EverLink-v1.2.1.apk"
+    "github": "https://github.com/bobocha214/everlink/releases/download/v1.2.0/EverLink-1.2.0-android.apk",
+    "gitee": "https://gitee.com/zhiyu_214/ever-link/releases/download/v1.2.0/EverLink-1.2.0-android.apk"
   },
   "notes": "首次发布版本。\n\n支持 Modbus TCP、MQTT、WebSocket、HTTP、OPC UA 协议调试，\nPing 测试与局域网快传。",
   "forceUpdate": false,

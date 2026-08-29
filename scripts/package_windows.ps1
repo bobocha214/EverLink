@@ -4,7 +4,7 @@
 
 .DESCRIPTION
     Zips the contents of build\windows\x64\runner\Release into
-    EverLink-Portable-{version}.zip. Used by the CI release workflow and
+    EverLink-{version}-windows-x64-portable.zip. Used by the CI release workflow and
     locally after `flutter build windows --release`.
 
 .PARAMETER Version
@@ -33,7 +33,7 @@ if (-not (Test-Path $src)) {
 }
 
 if (-not (Test-Path $OutputDir)) { New-Item -ItemType Directory -Path $OutputDir | Out-Null }
-$zip = Join-Path $OutputDir "EverLink-Portable-$Version.zip"
+$zip = Join-Path $OutputDir "EverLink-$Version-windows-x64-portable.zip"
 if (Test-Path $zip) { Remove-Item $zip -Force }
 
 Compress-Archive -Path (Join-Path $src '*') -DestinationPath $zip -Force
