@@ -855,7 +855,7 @@ class _OpcUaPageState extends State<OpcUaPage>
               : ListView.separated(
                   padding: const EdgeInsets.all(12),
                   itemCount: _traffic.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 8),
+                  separatorBuilder: (_, _) => const SizedBox(height: 8),
                   itemBuilder: (_, i) => _buildTrafficRow(_traffic[i]),
                 ),
         ),

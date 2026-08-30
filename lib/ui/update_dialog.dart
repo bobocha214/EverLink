@@ -1,19 +1,15 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'package:everlink/services/app_installer.dart';
 import 'package:everlink/services/update_service.dart';
 import 'package:everlink/ui/widgets/responsive_sheet.dart';
 
-/// 是否为桌面平台（底部弹层体验差，应使用居中对话框）。
-bool get _isDesktopSheet {
-  if (kIsWeb) return false;
-  return defaultTargetPlatform == TargetPlatform.windows ||
-      defaultTargetPlatform == TargetPlatform.linux ||
-      defaultTargetPlatform == TargetPlatform.macOS;
-}
+/// 与 App 主题一致的语义色，避免硬编码 Colors.green / Colors.orange / Colors.grey。
+/// 取自项目统一状态色板：在线/成功 = 0xFF30D158，连接中/警告 = 0xFFFF9F0A。
+const Color _kSuccessGreen = Color(0xFF30D158);
+const Color _kWarningAmber = Color(0xFFFF9F0A);
 
 /// 统一的「发现新版本」提示。
 ///
@@ -44,11 +40,11 @@ class _UpdateCard extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (!_isDesktopSheet) _dragHandle(scheme),
+        if (!isDesktopPlatform) _dragHandle(scheme),
         Padding(
           padding: EdgeInsets.fromLTRB(
             20,
-            _isDesktopSheet ? 20 : 4,
+            isDesktopPlatform ? 20 : 4,
             20,
             20,
           ),
@@ -108,23 +104,23 @@ class _UpdateCard extends StatelessWidget {
                   width: double.infinity,
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.orange.withValues(alpha: 0.14),
+                    color: _kWarningAmber.withValues(alpha: 0.14),
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(
-                        color: Colors.orange.withValues(alpha: 0.35), width: 1),
+                        color: _kWarningAmber.withValues(alpha: 0.35), width: 1),
                   ),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Icon(Icons.warning_amber_rounded,
-                          size: 18, color: Colors.orange.shade700),
+                          size: 18, color: _kWarningAmber),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           '未签名 IPA：需通过 AltStore / Sideloadly 等工具自行重签后'
                           '才能安装到真机，无法直接点按安装或在 App Store 获取。',
                           style: text.bodySmall?.copyWith(
-                              color: Colors.orange.shade800, height: 1.4),
+                              color: _kWarningAmber, height: 1.4),
                         ),
                       ),
                     ],
@@ -329,7 +325,7 @@ class _DownloadCardState extends State<_DownloadCard> {
     final iconColor = _failed
         ? scheme.error
         : _done
-            ? Colors.green
+            ? _kSuccessGreen
             : scheme.primary;
 
     Widget body;
@@ -337,9 +333,9 @@ class _DownloadCardState extends State<_DownloadCard> {
       body = Text(_error,
           style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant));
     } else if (_done) {
-      body = const Text(
+      body = Text(
           '更新包已下载完成。点击「立即安装」开始升级，将保留您的全部本地数据。',
-          style: TextStyle(color: Colors.grey, fontSize: 13));
+          style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13));
     } else {
       body = Column(
         mainAxisSize: MainAxisSize.min,
@@ -354,12 +350,12 @@ class _DownloadCardState extends State<_DownloadCard> {
                 LinearProgressIndicator(value: _progress / 100),
                 const SizedBox(height: 6),
                 Text('正在下载更新包… $_progress%',
-                    style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                    style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
               ],
             ),
           const SizedBox(height: 10),
-          const Text('请保持网络畅通，下载完成后将自动弹出安装。',
-              style: TextStyle(fontSize: 12, color: Colors.grey)),
+          Text('请保持网络畅通，下载完成后将自动弹出安装。',
+              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
         ],
       );
     }
@@ -415,11 +411,11 @@ class _DownloadCardState extends State<_DownloadCard> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (!_isDesktopSheet) _dragHandle(scheme),
+        if (!isDesktopPlatform) _dragHandle(scheme),
         Padding(
           padding: EdgeInsets.fromLTRB(
             20,
-            _isDesktopSheet ? 20 : 4,
+            isDesktopPlatform ? 20 : 4,
             20,
             20,
           ),

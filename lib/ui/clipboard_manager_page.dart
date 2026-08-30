@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import 'package:everlink/services/clipboard_history/clipboard_history_manager.dart';
 import 'package:everlink/ui/widgets/responsive_grid.dart';
@@ -235,11 +234,11 @@ class _ClipboardManagerPageState extends State<ClipboardManagerPage> {
   String _timeText(DateTime t) {
     final now = DateTime.now();
     final diff = now.difference(t);
-    final p = (int v) => v.toString().padLeft(2, '0');
+    String pad2(int v) => v.toString().padLeft(2, '0');
     if (diff.inMinutes < 1) return '刚刚';
     if (diff.inMinutes < 60) return '${diff.inMinutes} 分钟前';
     if (diff.inDays < 1) {
-      return '${p(t.hour)}:${p(t.minute)}';
+      return '${pad2(t.hour)}:${pad2(t.minute)}';
     }
     if (diff.inDays < 7) return '${diff.inDays} 天前';
     return '${t.month}/${t.day}';

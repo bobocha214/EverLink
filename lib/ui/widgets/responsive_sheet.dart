@@ -21,7 +21,7 @@ Future<T?> showResponsiveSheet<T>({
   bool isDismissible = true,
   bool enableDrag = true,
 }) async {
-  if (!_isDesktop) {
+  if (!isDesktopPlatform) {
     // 移动端：完全保持原来的底部弹层行为。
     return showModalBottomSheet<T>(
       context: context,
@@ -58,7 +58,9 @@ Future<T?> showResponsiveSheet<T>({
 }
 
 /// 是否为桌面平台（此处底部弹层体验差，应改用居中对话框）。
-bool get _isDesktop {
+///
+/// 导出为公开成员，供其它弹层（如更新提示）复用，避免重复判断逻辑。
+bool get isDesktopPlatform {
   if (kIsWeb) return false;
   return defaultTargetPlatform == TargetPlatform.windows ||
       defaultTargetPlatform == TargetPlatform.linux ||
