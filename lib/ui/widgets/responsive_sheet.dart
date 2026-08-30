@@ -18,6 +18,8 @@ Future<T?> showResponsiveSheet<T>({
   Color? backgroundColor,
   double desktopMaxWidth = 560,
   double desktopMaxHeightFactor = 0.86,
+  bool isDismissible = true,
+  bool enableDrag = true,
 }) async {
   if (!_isDesktop) {
     // 移动端：完全保持原来的底部弹层行为。
@@ -27,12 +29,15 @@ Future<T?> showResponsiveSheet<T>({
       useSafeArea: useSafeArea,
       shape: shape,
       backgroundColor: backgroundColor,
+      isDismissible: isDismissible,
+      enableDrag: enableDrag,
       builder: builder,
     );
   }
   // 桌面端：居中对话框，带圆角与最大宽高约束。
   return showDialog<T>(
     context: context,
+    barrierDismissible: isDismissible,
     builder: (ctx) => Dialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),

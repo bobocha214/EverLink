@@ -1,128 +1,249 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'package:everlink/services/app_installer.dart';
 import 'package:everlink/services/update_service.dart';
+import 'package:everlink/ui/widgets/responsive_sheet.dart';
 
-/// 统一的「发现新版本」专用弹框。
+/// 是否为桌面平台（底部弹层体验差，应使用居中对话框）。
+bool get _isDesktopSheet {
+  if (kIsWeb) return false;
+  return defaultTargetPlatform == TargetPlatform.windows ||
+      defaultTargetPlatform == TargetPlatform.linux ||
+      defaultTargetPlatform == TargetPlatform.macOS;
+}
+
+/// 统一的「发现新版本」提示。
 ///
-/// 取代了原先「底部 SnackBar + 点击再弹框」的两段式提示，启动检查到更新时
-/// 直接弹出此对话框。对话框内明确告知用户：本次更新为**增量升级**，会保留
-/// 全部本地数据（设备配置 / 历史记录 / 设置等），不会从头来过。
+/// 取代原先「底部 SnackBar + 点击再弹框」的两段式提示，并改为**响应式底部弹层**
+/// （移动端底部弹层、桌面端居中对话框，见 [showResponsiveSheet]）。弹层内明确
+/// 告知用户：本次更新为**增量升级**，会保留全部本地数据；iOS 未签名包会额外给出
+/// 自签安装的提示。
 ///
-/// 返回用户是否点击了「立即更新」（true=确认更新，false=稍后）。下载与安装
-/// 由调用方负责（便于在不同页面给出各自的反馈）。
+/// 返回用户是否点击了「立即更新」（true=确认更新，false/关闭=稍后）。
 Future<bool> showUpdateDialog(BuildContext context, UpdateInfo u) async {
-  final scheme = Theme.of(context).colorScheme;
-  final confirmed = await showDialog<bool>(
+  final result = await showResponsiveSheet<bool>(
     context: context,
-    // 升级提示需要用户明确决策，不允许误触空白关闭。
-    barrierDismissible: false,
-    builder: (ctx) => AlertDialog(
-      title: Row(
-        children: [
-          Icon(Icons.system_update_alt_rounded, color: scheme.primary),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text('发现新版本 v${u.version}'),
+    isScrollControlled: true,
+    builder: (ctx) => _UpdateCard(info: u),
+  );
+  return result == true;
+}
+
+class _UpdateCard extends StatelessWidget {
+  const _UpdateCard({required this.info});
+  final UpdateInfo info;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (!_isDesktopSheet) _dragHandle(scheme),
+        Padding(
+          padding: EdgeInsets.fromLTRB(
+            20,
+            _isDesktopSheet ? 20 : 4,
+            20,
+            20,
           ),
-        ],
-      ),
-      content: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.55,
-        ),
-        child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (u.build != null) ...[
-                Text('版本号 ${u.build}',
-                    style: TextStyle(color: scheme.primary, fontSize: 13)),
-                const SizedBox(height: 8),
+              // 头部：更新图标 + 版本号
+              Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: scheme.primaryContainer,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(Icons.system_update_alt_rounded,
+                        color: scheme.primary, size: 22),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text('发现新版本 v${info.version}',
+                        style: text.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700, fontSize: 18)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              // 安装包信息（平台 + 文件名）
+              if (info.assetName != null && info.assetName!.isNotEmpty)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.inventory_2_outlined,
+                          size: 16, color: scheme.onSurfaceVariant),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(info.assetName!,
+                            style: text.bodySmall?.copyWith(
+                                color: scheme.onSurfaceVariant,
+                                fontFamily: 'monospace')),
+                      ),
+                    ],
+                  ),
+                ),
+              // 未签名提示（iOS）
+              if (info.isUnsigned) ...[
+                const SizedBox(height: 10),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                        color: Colors.orange.withValues(alpha: 0.35), width: 1),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.warning_amber_rounded,
+                          size: 18, color: Colors.orange.shade700),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '未签名 IPA：需通过 AltStore / Sideloadly 等工具自行重签后'
+                          '才能安装到真机，无法直接点按安装或在 App Store 获取。',
+                          style: text.bodySmall?.copyWith(
+                              color: Colors.orange.shade800, height: 1.4),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ],
-              if (u.assetName != null && u.assetName!.isNotEmpty) ...[
-                Text('安装包：${u.assetName}',
-                    style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                const SizedBox(height: 8),
+              // 更新内容
+              if (info.notes != null && info.notes!.isNotEmpty) ...[
+                const SizedBox(height: 14),
+                Text('更新内容',
+                    style: text.titleSmall
+                        ?.copyWith(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 6),
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.of(context).size.height * 0.28,
+                  ),
+                  child: SingleChildScrollView(
+                    child: Text(
+                      info.notes!,
+                      style: text.bodySmall
+                          ?.copyWith(color: scheme.onSurfaceVariant, height: 1.5),
+                    ),
+                  ),
+                ),
               ],
-              if (u.notes != null && u.notes!.isNotEmpty) ...[
-                const Text('更新内容',
-                    style:
-                        TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                const SizedBox(height: 4),
-                Text(u.notes!,
-                    style:
-                        const TextStyle(color: Colors.grey, fontSize: 13)),
-                const SizedBox(height: 12),
-              ],
+              const SizedBox(height: 14),
+              // 增量升级提示卡
               Container(
-                padding: const EdgeInsets.all(10),
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: scheme.primaryContainer.withValues(alpha: 0.5),
+                  color: scheme.primaryContainer.withValues(alpha: 0.45),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Icon(Icons.verified_user_outlined,
-                        size: 16, color: scheme.primary),
+                        size: 18, color: scheme.primary),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         '本次为增量升级，将保留您的全部本地数据'
                         '（设备配置、历史记录、个人设置等），无需重新配置。',
-                        style: TextStyle(
-                            fontSize: 12, color: scheme.onSurfaceVariant),
+                        style: text.bodySmall
+                            ?.copyWith(color: scheme.onSurfaceVariant, height: 1.4),
                       ),
                     ),
                   ],
                 ),
               ),
+              const SizedBox(height: 18),
+              // 操作按钮
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.of(context).pop(false),
+                      child: const Text('稍后'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    flex: 2,
+                    child: FilledButton.icon(
+                      onPressed: () => Navigator.of(context).pop(true),
+                      icon: const Icon(Icons.download_rounded, size: 18),
+                      label: const Text('立即更新'),
+                    ),
+                  ),
+                ],
+              ),
             ],
           ),
         ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(ctx).pop(false),
-          child: const Text('稍后'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.of(ctx).pop(true),
-          child: const Text('立即更新'),
-        ),
       ],
-    ),
-  );
-  return confirmed == true;
+    );
+  }
 }
 
-/// 下载 / 安装进度专用弹框。
+/// 顶部拖拽手柄（仅移动端底部弹层展示）。
+Widget _dragHandle(ColorScheme scheme) => Center(
+      child: Container(
+        margin: const EdgeInsets.only(top: 8, bottom: 4),
+        width: 40,
+        height: 4,
+        decoration: BoxDecoration(
+          color: scheme.onSurfaceVariant.withValues(alpha: 0.3),
+          borderRadius: BorderRadius.circular(2),
+        ),
+      ),
+    );
+
+/// 下载 / 安装进度弹层。
 ///
-/// 取代原先「已开始下载 / 无法下载」的 SnackBar 反馈。调用后会先发起下载，
-/// 再通过 [AppInstaller.onInstallEvent] 实时展示进度；下载完成自动拉起系统
-/// 安装器，失败则可重试。下载在后台持续进行，用户可点「后台下载」收起弹框。
+/// 取代原先「已开始下载 / 无法下载」的 SnackBar 反馈，改为响应式底部弹层，
+/// 通过 [AppInstaller.onInstallEvent] 实时展示进度；下载在后台持续进行，
+/// 用户可点「后台下载」收起弹层。弹层不可误触关闭（下载中强制停留）。
 Future<void> showDownloadDialog(BuildContext context, String url) async {
   if (!context.mounted) return;
-  await showDialog<void>(
+  await showResponsiveSheet<void>(
     context: context,
-    barrierDismissible: false,
-    builder: (ctx) => _DownloadDialog(url: url),
+    isScrollControlled: true,
+    isDismissible: false,
+    enableDrag: false,
+    builder: (ctx) => _DownloadCard(url: url),
   );
 }
 
-class _DownloadDialog extends StatefulWidget {
+class _DownloadCard extends StatefulWidget {
   final String url;
-  const _DownloadDialog({required this.url});
+  const _DownloadCard({required this.url});
 
   @override
-  State<_DownloadDialog> createState() => _DownloadDialogState();
+  State<_DownloadCard> createState() => _DownloadCardState();
 }
 
-class _DownloadDialogState extends State<_DownloadDialog> {
+class _DownloadCardState extends State<_DownloadCard> {
   int _progress = 0;
   bool _indeterminate = true;
   bool _done = false;
@@ -144,7 +265,6 @@ class _DownloadDialogState extends State<_DownloadDialog> {
       _failed = false;
       _error = '';
     });
-    // 先订阅再发起，避免错过 started 事件。
     _sub?.cancel();
     _sub = AppInstaller.onInstallEvent.listen(_onEvent);
     AppInstaller.downloadAndInstall(widget.url).then((ok) {
@@ -178,8 +298,6 @@ class _DownloadDialogState extends State<_DownloadDialog> {
           _indeterminate = false;
           _progress = 100;
         });
-        // 原生已尝试自动拉起系统安装器；此处保留弹框并提供「立即安装」按钮，
-        // 作为自动拉起未生效（如未授予“安装未知应用”权限）时的手动兜底。
       case 'failed':
         setState(() {
           _failed = true;
@@ -197,6 +315,7 @@ class _DownloadDialogState extends State<_DownloadDialog> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
     final title = _failed
         ? '下载失败'
         : _done
@@ -215,7 +334,8 @@ class _DownloadDialogState extends State<_DownloadDialog> {
 
     Widget body;
     if (_failed) {
-      body = Text(_error, style: const TextStyle(color: Colors.grey, fontSize: 13));
+      body = Text(_error,
+          style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant));
     } else if (_done) {
       body = const Text(
           '更新包已下载完成。点击「立即安装」开始升级，将保留您的全部本地数据。',
@@ -275,7 +395,7 @@ class _DownloadDialogState extends State<_DownloadDialog> {
             } else {
               setState(() {
                 _failed = true;
-                _error = '无法启动安装，请检查是否已允许“安装未知应用”权限';
+                _error = '无法启动安装，请检查是否已允许相关权限';
               });
             }
           },
@@ -291,16 +411,50 @@ class _DownloadDialogState extends State<_DownloadDialog> {
       ];
     }
 
-    return AlertDialog(
-      title: Row(
-        children: [
-          Icon(icon, color: iconColor),
-          const SizedBox(width: 8),
-          Expanded(child: Text(title)),
-        ],
-      ),
-      content: body,
-      actions: actions,
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (!_isDesktopSheet) _dragHandle(scheme),
+        Padding(
+          padding: EdgeInsets.fromLTRB(
+            20,
+            _isDesktopSheet ? 20 : 4,
+            20,
+            20,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(icon, color: iconColor, size: 22),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(title,
+                        style: text.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w700)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              body,
+              const SizedBox(height: 18),
+              Row(
+                children: actions
+                    .map((w) => Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            child: w,
+                          ),
+                        ))
+                    .toList(),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

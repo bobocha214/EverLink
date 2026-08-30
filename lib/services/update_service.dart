@@ -22,6 +22,7 @@ class UpdateInfo {
     this.notes,
     this.forceUpdate = false,
     this.assetName,
+    this.isUnsigned = false,
   });
 
   final String version;
@@ -33,6 +34,11 @@ class UpdateInfo {
   /// 命中的安装包文件名（如 EverLink-1.2.0-windows-x64-setup.exe），
   /// 用于向用户展示「本次更新是什么平台的包」，避免 Android 包被推到 Windows。
   final String? assetName;
+
+  /// 安装包是否未签名。当前 iOS 走 `--no-codesign` 构建，产物为未签名 IPA，
+  /// 需用户自行重签（AltStore / Sideloadly 等）后才能装到真机；此标记用于在
+  /// 更新提示中明确告知，避免用户误以为可直接安装。
+  final bool isUnsigned;
 }
 
 /// 检查更新的结果。
@@ -166,12 +172,15 @@ class UpdateService {
       // 取不到则回退到 Release 页面（html_url）。
       String? downloadUrl;
       String? assetName;
+      // 当前 iOS 产物为未签名 IPA（CI 走 --no-codesign），需明确告知用户。
+      var isUnsigned = false;
       final assets = json['assets'];
       if (assets is List) {
         final sel = _selectPlatformAsset(assets);
         if (sel != null) {
           downloadUrl = sel.url;
           assetName = sel.name;
+          isUnsigned = Platform.isIOS && sel.name.toLowerCase().endsWith('.ipa');
         }
       }
       downloadUrl ??= json['html_url'] as String?;
@@ -188,6 +197,7 @@ class UpdateService {
           url: downloadUrl,
           notes: notes,
           assetName: assetName,
+          isUnsigned: isUnsigned,
         ),
       );
     } on SocketException {

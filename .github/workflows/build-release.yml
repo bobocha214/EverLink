@@ -4,7 +4,7 @@ name: Build Release
 # 所有产物统一命名：EverLink-<版本>-<平台>[-<arch>].<ext>（参考 VSCode/Electron 风格）：
 #   - Android：EverLink-<ver>-android.apk / EverLink-<ver>-android-<abi>.apk（ubuntu-latest）
 #   - Windows：EverLink-<ver>-windows-x64-setup.exe + EverLink-<ver>-windows-x64-portable.zip（windows-latest）
-#   - iOS    ：EverLink-<ver>-ios.ipa（macos-latest，未签名，需自行重签才能装真机）
+#   - iOS    ：EverLink-<ver>-ios-unsigned.ipa（macos-latest，未签名，需自行重签才能装真机）
 # 更新检查（UpdateService）会从该 Release 读取版本与各平台下载地址。
 # 注意：tag 名称需与 pubspec.yaml 的 version 字段一致（如代码是 1.1.0，则打 tag 1.1.0 或 v1.1.0）。
 on:
@@ -267,8 +267,8 @@ jobs:
         run: flutter build ios --release --no-codesign
 
       # 手工打包未签名 IPA：将 Runner.app 放入 Payload 目录后压缩为 .ipa。
-      # 命名统一为 EverLink-{version}-ios.ipa，与 Android/Windows 一致。
-      # 说明：未签名 IPA 无法直接安装到真机，需自行重签（如企业证书 / fastlane）。
+      # 文件名显式带 -unsigned，提醒用户这是未签名包（需重签才能装真机）。
+      # 说明：未签名 IPA 无法直接安装到真机，需自行重签（如 AltStore / Sideloadly）。
       #   若已配置 Apple 签名 Secrets（IOS_P12_BASE64 / IOS_P12_PASSWORD / IOS_PROFILE_BASE64），
       #   可改为 `flutter build ipa --export-options-plist=ios/ExportOptions.plist` 产出已签名 IPA。
       - name: Package IPA
@@ -284,14 +284,14 @@ jobs:
           rm -rf Payload
           mkdir -p Payload
           cp -r "$APP" Payload/
-          zip -r "EverLink-${APPVER}-ios.ipa" Payload
+          zip -r "EverLink-${APPVER}-ios-unsigned.ipa" Payload
           rm -rf Payload
-          ls -la "EverLink-${APPVER}-ios.ipa"
+          ls -la "EverLink-${APPVER}-ios-unsigned.ipa"
 
       - name: Publish to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           # 首个 job 已生成 Release 说明；此处仅追加 iOS 附件。
-          files: EverLink-*-ios.ipa
+          files: EverLink-*-ios-unsigned.ipa
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

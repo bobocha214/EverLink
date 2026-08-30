@@ -13,6 +13,10 @@
     "windows": {
       "github": "https://github.com/bobocha214/everlink/releases/download/v1.2.0/EverLink-1.2.0-windows-x64-setup.exe",
       "gitee": "https://gitee.com/zhiyu_214/ever-link/releases/download/v1.2.0/EverLink-1.2.0-windows-x64-setup.exe"
+    },
+    "ios": {
+      "github": "https://github.com/bobocha214/everlink/releases/download/v1.2.0/EverLink-1.2.0-ios-unsigned.ipa",
+      "gitee": "https://gitee.com/zhiyu_214/ever-link/releases/download/v1.2.0/EverLink-1.2.0-ios-unsigned.ipa"
     }
   },
   "notes": "首次发布版本。\n\n支持 Modbus TCP、MQTT、WebSocket、HTTP、OPC UA 协议调试，\nPing 测试与局域网快传。",
