@@ -31,22 +31,23 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 PUBSPEC = ROOT / "pubspec.yaml"
 
-# pubspec.yaml 中 version: major.minor.patch+build
-VER_RE = re.compile(r"^version:\s*(\d+)\.(\d+)\.(\d+)\+(\d+)\s*$", re.M)
+# pubspec.yaml 中 version: major.minor.patch[+build]，build 可选（本项目未使用）。
+VER_RE = re.compile(r"^version:\s*(\d+)\.(\d+)\.(\d+)(?:\+(\d+))?\s*$", re.M)
 
 
-def read_version() -> tuple[str, int]:
-    """读取 pubspec.yaml 的 (version, build)。pubspec 是版本唯一源。"""
+def read_version() -> tuple[str, int | None]:
+    """读取 pubspec.yaml 的 (version, build)。pubspec 是版本唯一源；build 缺省为 None。"""
     text = PUBSPEC.read_text(encoding="utf-8")
     m = VER_RE.search(text)
     if not m:
-        sys.exit(f"错误：{PUBSPEC} 中找不到 version: X.Y.Z+N 行")
-    return ".".join(m.groups()[:3]), int(m.group(4))
+        sys.exit(f"错误：{PUBSPEC} 中找不到 version: X.Y.Z[+N] 行")
+    return ".".join(m.groups()[:3]), int(m.group(4)) if m.group(4) else None
 
 
-def write_version(version: str, build: int) -> None:
+def write_version(version: str, build: int | None) -> None:
+    new = f"version: {version}+{build}" if build is not None else f"version: {version}"
     text = PUBSPEC.read_text(encoding="utf-8")
-    text, n = VER_RE.subn(f"version: {version}+{build}", text, count=1)
+    text, n = VER_RE.subn(new, text, count=1)
     if n != 1:
         sys.exit("错误：替换 version 行失败")
     PUBSPEC.write_text(text, encoding="utf-8")
@@ -86,15 +87,19 @@ def main() -> None:
             new_ver, new_build = args.target.split("+")
             new_build = int(new_build)
         else:
-            new_ver, new_build = args.target, cur_build + 1
+            # 仅给 X.Y.Z：沿用当前 build（无则保持无 build），避免强制引入 +build 改变现有风格。
+            new_ver, new_build = args.target, (cur_build + 1 if cur_build is not None else None)
     else:
         new_ver = bump(cur_ver, args.target)
-        new_build = cur_build + 1
+        new_build = cur_build + 1 if cur_build is not None else None
 
     if tuple(int(x) for x in new_ver.split(".")) < tuple(int(x) for x in cur_ver.split(".")):
         sys.exit(f"错误：新版本 {new_ver} 低于当前 {cur_ver}（发版不允许回退）")
 
-    print(f"版本：{cur_ver}+{cur_build}  ->  {new_ver}+{new_build}")
+    def _fmt(v: str, b: int | None) -> str:
+        return f"{v}+{b}" if b is not None else v
+
+    print(f"版本：{_fmt(cur_ver, cur_build)}  ->  {_fmt(new_ver, new_build)}")
     if args.dry_run:
         print("（dry-run，未做任何修改）")
         return
