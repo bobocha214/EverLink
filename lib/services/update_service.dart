@@ -21,6 +21,7 @@ class UpdateInfo {
     required this.url,
     this.notes,
     this.forceUpdate = false,
+    this.assetName,
   });
 
   final String version;
@@ -28,6 +29,10 @@ class UpdateInfo {
   final String url;
   final String? notes;
   final bool forceUpdate;
+
+  /// 命中的安装包文件名（如 EverLink-1.2.0-windows-x64-setup.exe），
+  /// 用于向用户展示「本次更新是什么平台的包」，避免 Android 包被推到 Windows。
+  final String? assetName;
 }
 
 /// 检查更新的结果。
@@ -65,7 +70,10 @@ class UpdateCheckResult {
 ///  - `tag_name`：版本标签（如 `v1.2.3`，自动去掉前缀 `v`）
 ///  - `body`：更新说明（Release 正文）
 ///  - `assets[]`：附件列表，`browser_download_url` 为下载地址；
-///    优先取 `.apk` 附件，取不到则回退到 Release 页 `html_url`
+///    按**当前运行平台**筛选对应安装包（Android→.apk / Windows→.exe /
+///    Linux→.AppImage·.deb·.snap / macOS→.dmg / iOS→.ipa），取不到则
+///    回退到 Release 页 `html_url`。这样 Windows 客户端永远不会被提示下载
+///    Android 的 .apk，反之亦然。
 ///
 /// Gitee 源已暂时禁用（见 [UpdateSource.gitee] 注释）。
 class UpdateService {
@@ -153,18 +161,17 @@ class UpdateService {
 
       final notes = json['body'] as String?;
 
-      // 从 assets 中取出 .apk 的下载地址；取不到则回退到 Release 页面。
+      // 根据当前运行平台，从 assets 中选出对应安装包（Android→.apk，
+      // Windows→.exe，Linux→.AppImage/.deb/.snap，macOS→.dmg，iOS→.ipa）。
+      // 取不到则回退到 Release 页面（html_url）。
       String? downloadUrl;
+      String? assetName;
       final assets = json['assets'];
       if (assets is List) {
-        for (final a in assets) {
-          if (a is Map) {
-            final name = (a['name'] as String? ?? '');
-            if (name.endsWith('.apk')) {
-              downloadUrl = a['browser_download_url'] as String?;
-              break;
-            }
-          }
+        final sel = _selectPlatformAsset(assets);
+        if (sel != null) {
+          downloadUrl = sel.url;
+          assetName = sel.name;
         }
       }
       downloadUrl ??= json['html_url'] as String?;
@@ -180,6 +187,7 @@ class UpdateService {
           version: version,
           url: downloadUrl,
           notes: notes,
+          assetName: assetName,
         ),
       );
     } on SocketException {
@@ -189,6 +197,48 @@ class UpdateService {
     } catch (e) {
       return UpdateCheckResult.error('检查更新失败：$e');
     }
+  }
+
+  /// 当前运行平台对应的安装包筛选规则：
+  /// 返回 (平台关键字, 扩展名优先级列表，越靠前越优先)。
+  (String, List<String>) _platformAssetRule() {
+    if (Platform.isAndroid) return ('android', ['.apk']);
+    if (Platform.isWindows) return ('windows', ['.exe', '.zip']);
+    if (Platform.isLinux) return ('linux', ['.AppImage', '.deb', '.snap']);
+    if (Platform.isMacOS) return ('macos', ['.dmg', '.zip']);
+    if (Platform.isIOS) return ('ios', ['.ipa']);
+    // Web / 其它：宽松匹配所有常见安装包。
+    return ('', ['.apk', '.exe', '.zip', '.dmg', '.AppImage', '.deb', '.snap', '.ipa']);
+  }
+
+  /// 从 Release assets 中选出当前平台对应的安装包。
+  ///
+  /// 必须是「平台关键字」命中（如 windows 包名含 'windows'）且扩展名在优先级
+  /// 列表内；优先取优先级最高（列表最前）的条目。这样 Windows 永远拿不到
+  /// Android 的 .apk，反之亦然。取不到返回 null（由调用方回退到 Release 页）。
+  ({String url, String name})? _selectPlatformAsset(List assets) {
+    final rule = _platformAssetRule();
+    final keyword = rule.$1.toLowerCase();
+    final exts = rule.$2.map((e) => e.toLowerCase()).toList();
+    String? bestUrl;
+    String? bestName;
+    var bestPriority = exts.length; // 越小越优先
+    for (final a in assets) {
+      if (a is! Map) continue;
+      final name = ((a['name'] as String?) ?? '').toLowerCase();
+      final url = a['browser_download_url'] as String?;
+      if (url == null || url.isEmpty) continue;
+      if (keyword.isNotEmpty && !name.contains(keyword)) continue;
+      final priority = exts.indexWhere((ext) => name.endsWith(ext));
+      if (priority < 0) continue;
+      if (priority < bestPriority) {
+        bestPriority = priority;
+        bestUrl = url;
+        bestName = a['name'] as String?;
+      }
+    }
+    if (bestUrl == null || bestName == null) return null;
+    return (url: bestUrl, name: bestName);
   }
 
   /// 比较远端版本是否比当前更新（仅比对版本号）。

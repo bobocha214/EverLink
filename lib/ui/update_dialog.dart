@@ -43,6 +43,11 @@ Future<bool> showUpdateDialog(BuildContext context, UpdateInfo u) async {
                     style: TextStyle(color: scheme.primary, fontSize: 13)),
                 const SizedBox(height: 8),
               ],
+              if (u.assetName != null && u.assetName!.isNotEmpty) ...[
+                Text('安装包：${u.assetName}',
+                    style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                const SizedBox(height: 8),
+              ],
               if (u.notes != null && u.notes!.isNotEmpty) ...[
                 const Text('更新内容',
                     style:

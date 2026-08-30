@@ -11,8 +11,10 @@ class AppConstants {
   //
   // 更新检查直接调用 GitHub Releases API 拉取最新 Release：
   //   https://api.github.com/repos/{owner}/{repo}/releases/latest
-  // 解析其中的 tag_name / body / assets，取 .apk 的 browser_download_url。
-  // 不依赖 update.json，也不走 Gitee（Gitee 未登录 API 限速较严）。
+// 解析其中的 tag_name / body / assets，按**当前平台**选取对应安装包
+// （Android→.apk / Windows→.exe / Linux→.AppImage·.deb·.snap / macOS→.dmg /
+// iOS→.ipa），避免把 Android 包推给 Windows 等。不依赖 update.json，也不走
+// Gitee（Gitee 未登录 API 限速较严）。
 
   /// GitHub 仓库坐标（owner/repo）。
   static const String githubRepo = 'bobocha214/everlink';
