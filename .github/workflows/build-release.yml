@@ -11,15 +11,9 @@ on:
   push:
     tags:
       - '*'
-    # 仅改动文档/图片时不为该 tag 触发整条构建（参考 juejin.cn/post/7080764562609274916）
-    paths-ignore:
-      - '**/*.md'
-      - '**/*.txt'
-      - '**/*.png'
-      - '**/*.jpg'
-      - '**/*.jpeg'
-      - 'docs/**'
-      - 'README.md'
+    # 此处不加 paths-ignore：打 tag 的语义就是「我要发版」，不应被文件类型过滤掉。
+    # 且 tag push 的 diff 基准不可靠（before 为空提交），曾出现只改 .md 的补丁版本
+    # 被静默跳过构建的情况。文档站的构建由独立 workflow 按分支路径过滤。
 
 permissions:
   contents: write   # 允许 action-gh-release 创建/更新 Release
@@ -129,10 +123,22 @@ jobs:
           echo "== key.properties =="
           cat android/key.properties 2>/dev/null || echo "no key.properties"
 
+      # Release 说明正文取自 CHANGELOG.md 对应版本段落（面向用户的中文描述，
+      # UpdateService 会把它展示在应用内更新弹窗里）。段落缺失时脚本输出兜底文案
+      # 并以 0 退出，绝不因说明缺失而让整条发布流程失败。
+      - name: Extract release notes from CHANGELOG.md
+        run: |
+          set -euo pipefail
+          python3 scripts/extract_changelog.py -o RELEASE_NOTES.md
+          echo "===== RELEASE_NOTES.md ====="
+          cat RELEASE_NOTES.md
+
       - name: Publish to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          # 自动从本次 tag 的提交生成更新说明（UpdateService 会作为 notes 展示）
+          # 正文 = 手写的 CHANGELOG 段落；GitHub 自动生成的提交列表与
+          # Full Changelog 链接会由 generate_release_notes 追加在正文之后。
+          body_path: RELEASE_NOTES.md
           generate_release_notes: true
           # Flutter Gradle 插件把 APK 输出到仓库根的 build/app/outputs/flutter-apk/，
           # 不是 android/app/build/。renameEverLinkApk 任务在此目录重命名为 EverLink-*-android*.apk。

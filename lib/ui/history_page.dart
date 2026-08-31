@@ -7,6 +7,7 @@ import 'package:everlink/ui/history_detail_page.dart';
 import 'package:everlink/ui/widgets/responsive_grid.dart';
 import 'package:everlink/ui/widgets/responsive_sheet.dart';
 import 'package:everlink/utils/app_routes.dart';
+import 'package:everlink/utils/app_theme.dart';
 
 /// 操作类别，用于历史筛选。
 enum _HistCat {
@@ -372,7 +373,9 @@ class _HistoryPageState extends State<HistoryPage> {
         16,
         8,
         16,
-        16 + (SettingsService.instance.navFloating ? 100 : 0),
+        16 + (SettingsService.instance.navFloating
+          ? AppTheme.floatingNavClearance
+          : 0),
       ),
       child: ResponsiveGrid(
         spacing: 8,

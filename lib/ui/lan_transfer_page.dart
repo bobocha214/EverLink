@@ -894,6 +894,9 @@ class _LanTransferPageState extends State<LanTransferPage> {
       context: context,
       builder: (d) => StatefulBuilder(
         builder: (_, setLocal) => AlertDialog(
+          // 窄屏下收窄外边距，给 PIN 输入框留出足够宽度。
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
           title: const Text('加入 / 创建频道'),
           content: SingleChildScrollView(
             child: Column(
@@ -996,6 +999,7 @@ class _LanTransferPageState extends State<LanTransferPage> {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
         title: Text('频道「${c.name}」密码'),
         content: Column(
           mainAxisSize: MainAxisSize.min,

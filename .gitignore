@@ -51,3 +51,6 @@ app.*.map.json
 android/key.properties
 android/*.jks
 android/*.keystore
+
+# 由 scripts/extract_changelog.py 在 CI 中生成的临时 Release 说明
+RELEASE_NOTES.md

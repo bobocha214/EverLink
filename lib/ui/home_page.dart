@@ -18,6 +18,7 @@ import 'package:everlink/ui/widgets/add_device_sheet.dart';
 import 'package:everlink/ui/widgets/responsive_grid.dart';
 import 'package:everlink/ui/widgets/responsive_sheet.dart';
 import 'package:everlink/utils/app_routes.dart';
+import 'package:everlink/utils/app_theme.dart';
 
 /// 首页：以卡片形式展示用户保存的所有设备，并汇总在线 / 离线 / 连接中数量。
 ///
@@ -280,7 +281,9 @@ class _HomePageState extends State<HomePage> {
           left: 16,
           right: 16,
           top: 16,
-          bottom: 16 + (SettingsService.instance.navFloating ? 100 : 0),
+          bottom: 16 + (SettingsService.instance.navFloating
+            ? AppTheme.floatingNavClearance
+            : 0),
         ),
         children: [
           _buildStatRow(mgr),
@@ -671,7 +674,9 @@ class _FabAboveNav extends FloatingActionButtonLocation {
   @override
   Offset getOffset(ScaffoldPrelayoutGeometry geometry) {
     final base = FloatingActionButtonLocation.endFloat.getOffset(geometry);
-    final extra = SettingsService.instance.navFloating ? 100.0 : 0.0;
+    final extra = SettingsService.instance.navFloating
+        ? AppTheme.floatingNavClearance
+        : 0.0;
     return Offset(base.dx, base.dy - extra);
   }
 }

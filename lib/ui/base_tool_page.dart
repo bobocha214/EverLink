@@ -10,6 +10,7 @@ import 'package:everlink/ui/widgets/tool_list_card.dart';
 import 'package:everlink/utils/app_routes.dart';
 import 'package:everlink/utils/byte_codec.dart';
 import 'package:everlink/utils/number_codec.dart';
+import 'package:everlink/utils/app_theme.dart';
 
 /// 进制工具页（离线，无需连接设备）。
 ///
@@ -28,7 +29,9 @@ class BaseToolPage extends StatelessWidget {
           left: 16,
           right: 16,
           top: 16,
-          bottom: 16 + (SettingsService.instance.navFloating ? 100 : 0),
+          bottom: 16 + (SettingsService.instance.navFloating
+            ? AppTheme.floatingNavClearance
+            : 0),
         ),
         child: ResponsiveGrid(
           children: [

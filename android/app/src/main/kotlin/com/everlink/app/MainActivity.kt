@@ -467,16 +467,11 @@ class MainActivity : FlutterActivity() {
                             if (status == DownloadManager.STATUS_SUCCESSFUL) {
                                 val apkUri = dm.getUriForDownloadedFile(id)
                                 lastApkUri = apkUri
+                                // 仅回传 completed，不在此处拉起系统安装器：
+                                // 安装器会抢占前台导致底部弹框被 dismiss，
+                                // 正在传输途中的 completed 事件会丢失，弹框卡在"下载中"。
+                                // 安装时机改由 Dart 侧「立即安装」按钮调用 installApk 触发。
                                 installEventSink?.success(mapOf("status" to "completed"))
-                                val installIntent = Intent(Intent.ACTION_VIEW).apply {
-                                    setDataAndType(
-                                        apkUri,
-                                        "application/vnd.android.package-archive"
-                                    )
-                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                }
-                                applicationContext.startActivity(installIntent)
                             } else {
                                 val reason = cursor.getInt(
                                     cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON)

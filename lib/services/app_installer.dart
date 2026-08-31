@@ -24,8 +24,6 @@ class AppInstaller {
   static const _channel = MethodChannel('everlink/installer');
   static const _events = EventChannel('everlink/installer_events');
 
-  static Stream<Map<String, dynamic>>? _installStream;
-
   /// 非 Android 平台（Windows 等）的事件流，由 Dart 侧驱动。
   static StreamController<Map<String, dynamic>>? _nonAndroidController;
 
@@ -33,6 +31,11 @@ class AppInstaller {
   static String? _lastExePath;
 
   /// 下载 / 安装状态事件流（原生侧 / Dart 侧统一出口）。
+  ///
+  /// Android 上每次访问都建立一条全新的 [receiveBroadcastStream] 连接，
+  /// 不缓存单例流——否则订阅被取消（弹框关闭）后原生 `onCancel` 会把
+  /// `installEventSink` 置空，缓存流不会再触发 `onListen` 重建连接，
+  /// 下一次下载完成的 `completed` 事件将彻底丢失，弹框永远停在"下载中"。
   static Stream<Map<String, dynamic>> get onInstallEvent {
     if (!Platform.isAndroid) {
       // 非 Android 走 Dart 侧事件流（Windows 下载 .exe、其它平台浏览器回退）。
@@ -40,10 +43,9 @@ class AppInstaller {
           StreamController<Map<String, dynamic>>.broadcast();
       return _nonAndroidController!.stream;
     }
-    _installStream ??= _events
+    return _events
         .receiveBroadcastStream()
         .map((e) => (e as Map<Object?, Object?>).cast<String, dynamic>());
-    return _installStream!;
   }
 
   /// 下载并安装更新包。返回是否成功发起。

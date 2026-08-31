@@ -6,9 +6,12 @@
   2. 推送 `vX.Y.Z` 标签即触发 GitHub Actions（build-release.yml）自动构建并发布 Release；
   3. CI 从 pubspec 读取版本，并断言其与 tag 一致（不一致直接失败）。
 
-因此本脚本只做三件事：改 pubspec 版本 → 提交 → 打 annotated tag。
+因此本脚本只做三件事：校验 CHANGELOG → 改 pubspec 版本 → 提交并打 annotated tag。
 构建 / 打包 / 发布全部交给 CI。推送需在本机配好凭据后执行
 （此机无 GitHub 凭据，故默认只打印推送命令，可用 --push 尝试）。
+
+前置动作：先在 CHANGELOG.md 写好 `## [新版本] - 日期` 段落（该段落会成为 GitHub
+Release 说明与应用内更新弹窗的文案）；缺失时本脚本会直接拒绝发版。
 
 用法：
   python scripts/bump_version.py patch            # 1.2.0+15 -> 1.2.1+16
@@ -27,6 +30,9 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+
+# 同目录脚本：复用其 CHANGELOG 段落解析，避免两处实现漂移。
+from extract_changelog import CHANGELOG, extract
 
 ROOT = Path(__file__).resolve().parent.parent
 PUBSPEC = ROOT / "pubspec.yaml"
@@ -77,6 +83,8 @@ def main() -> None:
     ap.add_argument("target", help="patch / minor / major / X.Y.Z / X.Y.Z+N")
     ap.add_argument("--push", action="store_true", help="尝试自动推送（默认不推送）")
     ap.add_argument("--dry-run", action="store_true", help="只预览，不实际修改")
+    ap.add_argument("--no-changelog-check", action="store_true",
+                    help="跳过 CHANGELOG.md 段落校验（不推荐）")
     args = ap.parse_args()
 
     cur_ver, cur_build = read_version()
@@ -100,17 +108,30 @@ def main() -> None:
         return f"{v}+{b}" if b is not None else v
 
     print(f"版本：{_fmt(cur_ver, cur_build)}  ->  {_fmt(new_ver, new_build)}")
+
+    # CHANGELOG 段落是 Release 说明与应用内更新弹窗的正文来源，发版前必须已写好。
+    if not args.no_changelog_check:
+        section = extract(CHANGELOG.read_text(encoding="utf-8"), new_ver) if CHANGELOG.exists() else None
+        if not section:
+            sys.exit(
+                f"错误：CHANGELOG.md 中缺少 {new_ver} 的变更段落。\n"
+                f"      请先补写 `## [{new_ver}] - YYYY-MM-DD` 及其条目——该内容会作为\n"
+                f"      GitHub Release 说明，并展示在应用内的更新提示弹窗中。\n"
+                f"      确需跳过：加 --no-changelog-check"
+            )
+        print(f"✓ CHANGELOG.md 已包含 {new_ver} 段落（{len(section)} 字符）")
+
     if args.dry_run:
         print("（dry-run，未做任何修改）")
         return
 
     # 1) 写入 pubspec.yaml（版本唯一源）
     write_version(new_ver, new_build)
-    print(f"✓ pubspec.yaml -> version: {new_ver}+{new_build}")
+    print(f"✓ pubspec.yaml -> version: {_fmt(new_ver, new_build)}")
 
-    # 2) 仅提交 pubspec.yaml（限定文件，避免夹带无关改动）
+    # 2) 只提交 pubspec.yaml 与 CHANGELOG.md（限定文件，避免夹带无关改动）
     tag = f"v{new_ver}"
-    git("commit", "-m", f"chore(release): v{new_ver}", "--", "pubspec.yaml")
+    git("commit", "-m", f"chore(release): v{new_ver}", "--", "pubspec.yaml", "CHANGELOG.md")
     git("tag", "-a", tag, "-m", f"EverLink v{new_ver}")
     print(f"✓ 已提交并打 tag {tag}")
 

@@ -10,6 +10,7 @@ import 'package:everlink/ui/opcua_server_page.dart';
 import 'package:everlink/ui/tcp_server_page.dart';
 import 'package:everlink/ui/widgets/tool_list_card.dart';
 import 'package:everlink/utils/app_routes.dart';
+import 'package:everlink/utils/app_theme.dart';
 
 /// 服务模拟总入口：列出本地服务端模拟工具。
 class ServerSimPage extends StatelessWidget {
@@ -24,7 +25,9 @@ class ServerSimPage extends StatelessWidget {
           left: 16,
           right: 16,
           top: 16,
-          bottom: 16 + (SettingsService.instance.navFloating ? 100 : 0),
+          bottom: 16 + (SettingsService.instance.navFloating
+            ? AppTheme.floatingNavClearance
+            : 0),
         ),
         child: ResponsiveGrid(
           children: [

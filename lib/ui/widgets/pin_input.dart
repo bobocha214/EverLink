@@ -73,11 +73,17 @@ class _PinInputWidgetState extends State<PinInputWidget> {
     widget.onChanged?.call(clamped);
   }
 
+  /// 单格之间的水平间距（左右各一份 margin）。
+  static const double _gap = 6;
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final text = _ctl.text;
     final cursorIndex = text.length;
+    final n = widget.length;
+    final fontSize = (widget.boxSize * 0.45).clamp(14.0, 22.0);
+
     return GestureDetector(
       onTap: widget.enabled ? () => _focus.requestFocus() : null,
       child: SizedBox(
@@ -109,39 +115,54 @@ class _PinInputWidgetState extends State<PinInputWidget> {
                   ),
                 ),
               ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: List.generate(widget.length, (i) {
-                final filled = i < text.length;
-                final isCursor = widget.enabled && i == cursorIndex;
-                final borderColor = filled || isCursor
-                    ? scheme.primary
-                    : Colors.grey.withValues(alpha: 0.4);
-                return Container(
-                  width: widget.boxSize,
-                  height: widget.boxSize,
-                  margin: const EdgeInsets.symmetric(horizontal: 6),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: borderColor, width: 1.6),
-                    borderRadius: BorderRadius.circular(10),
-                    color: filled
-                        ? scheme.primary.withValues(alpha: 0.10)
-                        : (isCursor
-                            ? scheme.primary.withValues(alpha: 0.06)
-                            : Colors.transparent),
-                  ),
-                  child: Center(
-                    child: Text(
-                      filled ? text[i] : '',
-                      style: const TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                        height: 1,
+            // 自适应宽度：整行最多占 n*(boxSize+2*gap)，空间不足时由 Expanded
+            // 自动均分收缩，格子用 AspectRatio 保持正方形，窄屏不会横向溢出。
+            // 注意：这里刻意不用 LayoutBuilder——它在 layout 阶段重建子树，
+            // 而子树中的 TextField 会注册/注销 Inherited 依赖，容易触发
+            // "check that it really is our descendant" 断言。
+            Center(
+              child: ConstrainedBox(
+                constraints:
+                    BoxConstraints(maxWidth: n * (widget.boxSize + _gap * 2)),
+                child: Row(
+                  children: List.generate(n, (i) {
+                    final filled = i < text.length;
+                    final isCursor = widget.enabled && i == cursorIndex;
+                    final borderColor = filled || isCursor
+                        ? scheme.primary
+                        : Colors.grey.withValues(alpha: 0.4);
+                    return Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: _gap),
+                        child: AspectRatio(
+                          aspectRatio: 1,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              border: Border.all(color: borderColor, width: 1.6),
+                              borderRadius: BorderRadius.circular(10),
+                              color: filled
+                                  ? scheme.primary.withValues(alpha: 0.10)
+                                  : (isCursor
+                                      ? scheme.primary.withValues(alpha: 0.06)
+                                      : Colors.transparent),
+                            ),
+                            child: Center(
+                              child: Text(
+                                filled ? text[i] : '',
+                                style: TextStyle(
+                                  fontSize: fontSize,
+                                  fontWeight: FontWeight.bold,
+                                  height: 1,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                );
-              }),
+                    );
+                  }),
+                ),
+              ),
             ),
           ],
         ),

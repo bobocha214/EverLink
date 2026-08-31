@@ -9,6 +9,7 @@ import 'package:everlink/ui/settings_page.dart';
 import 'package:everlink/ui/update_page.dart';
 import 'package:everlink/utils/app_constants.dart';
 import 'package:everlink/utils/app_routes.dart';
+import 'package:everlink/utils/app_theme.dart';
 
 /// “我的”页面：六大板块菜单，点击进入对应配置页。
 class ProfilePage extends StatelessWidget {
@@ -79,7 +80,9 @@ class ProfilePage extends StatelessWidget {
           left: 16,
           right: 16,
           top: 16,
-          bottom: 16 + (SettingsService.instance.navFloating ? 100 : 0),
+          bottom: 16 + (SettingsService.instance.navFloating
+            ? AppTheme.floatingNavClearance
+            : 0),
         ),
         children: [
           _buildHeader(context),

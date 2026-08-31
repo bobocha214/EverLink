@@ -226,7 +226,7 @@ class _SettingsPageState extends State<SettingsPage> {
             Card(
               child: SwitchListTile(
                 title: const Text('菜单栏悬浮'),
-                subtitle: const Text('以毛玻璃浮动样式呈现底部导航栏'),
+                subtitle: const Text('以毛玻璃胶囊样式呈现底部导航（仅图标）'),
                 value: settings.navFloating,
                 onChanged: (v) => settings.setNavFloating(v),
               ),

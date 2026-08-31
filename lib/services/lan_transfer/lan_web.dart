@@ -138,9 +138,11 @@ const String kLanWebHtml = r'''<!DOCTYPE html>
   }
   .minput-wrap input:focus{border-color:#00897b;background:#fff}
   .minput-wrap input::placeholder{color:#b0bec5}
-  .pinwrap{display:flex;gap:8px;justify-content:center;margin:10px 0 4px}
+  /* 自适应宽度：flex 等分，窄屏（360px 手机）自动收缩，不会横向溢出卡片 */
+  .pinwrap{display:flex;gap:6px;justify-content:center;margin:10px 0 4px}
   .pinbox{
-    width:38px;height:46px;text-align:center;font-size:22px;font-weight:700;
+    flex:1 1 0;min-width:0;width:100%;height:46px;padding:0;
+    text-align:center;font-size:20px;font-weight:700;
     border:1.5px solid #cfd4da;border-radius:10px;outline:none;background:#f8f9fa;
     transition:border-color .15s,background .15s;caret-color:#00897b;
   }
@@ -270,7 +272,7 @@ const String kLanWebHtml = r'''<!DOCTYPE html>
     </div>
     <div class="card-body">
       <div class="pinwrap" id="pwdPin"></div>
-      <div class="pinhint">请输入 6 位频道 PIN（验证码样式）</div>
+      <div class="pinhint">请输入 6 位频道 PIN，验证通过后本机会记住，下次自动进入</div>
       <div class="merr" id="pwdErr"></div>
     </div>
     <div class="card-foot">
@@ -302,6 +304,34 @@ const String kLanWebHtml = r'''<!DOCTYPE html>
   var qs = new URLSearchParams(location.search);
   var CHANNEL = qs.get('ch') || '';
   var KEY = qs.get('k') || '';
+
+  // ---------------- 频道凭据本地缓存（记住 PIN，第二次免输入） ----------------
+  // 验证通过后按频道名落盘到 localStorage，下次打开同一主机页面时直接用缓存凭据
+  // 静默校验；若 App 端改过 PIN 或频道已不存在，校验失败会自动清除缓存并重新弹窗。
+  var LS_LAST_CH = 'everlink_last_channel';
+  function lsKeyCh(ch){ return 'everlink_chkey_' + ch; }
+  function savedKey(ch){
+    if(!ch) return '';
+    try { return localStorage.getItem(lsKeyCh(ch)) || ''; } catch(e){ return ''; }
+  }
+  function saveKey(ch, k){
+    if(!ch) return;
+    try {
+      // 公共频道（无 PIN）也记住频道名，便于下次自动回到该频道。
+      localStorage.setItem(LS_LAST_CH, ch);
+      if(k) localStorage.setItem(lsKeyCh(ch), k);
+      else localStorage.removeItem(lsKeyCh(ch));
+    } catch(e){}
+  }
+  function clearKey(ch){
+    if(!ch) return;
+    try { localStorage.removeItem(lsKeyCh(ch)); } catch(e){}
+  }
+  // URL 未带频道参数时回退到上次成功进入的频道，配合缓存 PIN 实现"第二次免输入"。
+  if(!CHANNEL){
+    try { CHANNEL = localStorage.getItem(LS_LAST_CH) || ''; } catch(e){}
+  }
+  if(CHANNEL && !KEY) KEY = savedKey(CHANNEL);
   // 是否已加入某个频道（含公共频道）。用于隔离频道/私聊的存储与轮询，
   // 避免未选择频道时把 P2P 消息误当成频道消息、或存储键与私聊发生碰撞。
   var channelJoined = !!CHANNEL;
@@ -442,6 +472,7 @@ const String kLanWebHtml = r'''<!DOCTYPE html>
         } else {
           $('pwdErr').textContent = d.error || '密码不正确';
           $('pwdOk').disabled = false;
+          clearKey(CHANNEL); // 旧缓存已失效，避免下次重复用错误 PIN
           clearPin();
         }
       }).catch(function(){
@@ -960,9 +991,15 @@ const String kLanWebHtml = r'''<!DOCTYPE html>
     $('chErr').textContent = '';
     closePicker();  // 先关闭频道选择器，避免与密码弹窗叠加
     if(isPrivate){
-      // 私有频道：复用密码弹窗，验证成功由 pwdOk 调 enterChannel。
       CHANNEL = name;
       KEY = '';
+      var cached = savedKey(name);
+        if(cached){
+        // 之前验证过 → 静默复用，成功直接进，失败（改过 PIN）再弹窗。
+        verifyChannel(name, cached);
+        return;
+      }
+      // 私有频道：复用密码弹窗，验证成功由 pwdOk 调 enterChannel。
       pwdFromPicker = true;
       openPwdModal();
     } else {
@@ -974,10 +1011,11 @@ const String kLanWebHtml = r'''<!DOCTYPE html>
   // 进入某个频道：设置上下文并切到频道视图，确保只启动一次轮询。
   function enterChannel(name, key){
     CHANNEL = name;
-    KEY = key;
+    KEY = key || '';
     channelJoined = true;
     needPwd = false;
     pwdFromPicker = false;
+    saveKey(name, KEY); // 记住凭据，下次打开同一频道无需再输 PIN
     closePicker();
     closePwdModal();
     if(!started){ startApp(); }
@@ -1018,28 +1056,45 @@ const String kLanWebHtml = r'''<!DOCTYPE html>
     document.body.removeChild(ta);
   }
 
+  // 校验频道凭据：成功 → 直接进入；需要密码 / 密码失效 → 清缓存并弹 PIN 框。
+  // 公共频道（服务端密码为空）走同一路径，返回 ok 直接进入。
+  function verifyChannel(ch, k){
+    var url = '/api/auth?ch=' + encodeURIComponent(ch)
+            + (k ? ('&k=' + encodeURIComponent(k)) : '');
+    fetch(url)
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if(d.ok){ enterChannel(ch, k || ''); return; }
+        // 频道不存在 / 未加入（App 端已退出或改名）→ 回频道选择器重新选。
+        var gone = (d.needPassword === false)
+                || (d.error && d.error.indexOf('不存在') >= 0);
+        clearKey(ch);
+        if(gone){
+          if(CHANNEL === ch){ CHANNEL = ''; KEY = ''; channelJoined = false; }
+          fetchChannels();
+          return;
+        }
+        // 缓存 PIN 失效（App 端改过密码）→ 重新输入一次。
+        if(CHANNEL === ch) KEY = '';
+        needPwd = true;
+        $('lock').textContent = '\u{1F512}';
+        openPwdModal();
+      })
+      .catch(function(){
+        // 网络异常：已有凭据就先直接进入（离线也能看本地缓存消息）。
+        if(k) enterChannel(ch, k);
+        else openPwdModal();
+      });
+  }
+
   // 初始化：
-  //  - 扫码带频道且需密码 → 弹密码框；
-  //  - 扫码带频道且免密码（公共频道）或无密码参数 → 直接进入；
-  //  - 直接输入 IP（无频道参数）→ 拉取频道列表，让用户直接选公共频道等。
+  //  - 有频道（扫码参数或上次记住的频道）→ 用 URL 上的 PIN 或本地缓存的 PIN 静默校验；
+  //  - 直接输入 IP 且从未进过频道 → 拉取频道列表，让用户选择。
   function init(){
     fetchNetworkInfo(); // 立即启动网络信息轮询（不依赖 connect 是否成功）
     connect(); // 先连上主机，拿到 serverAddr 并展示连接状态
-    if(CHANNEL && !KEY){
-      fetch('/api/auth?ch=' + encodeURIComponent(CHANNEL))
-        .then(function(r){ return r.json(); })
-        .then(function(d){
-          if(d.needPassword){
-            needPwd = true;
-            $('lock').textContent = '\u{1F512}';
-            openPwdModal();
-          } else {
-            startApp();
-          }
-        })
-        .catch(function(){ startApp(); });
-    } else if (CHANNEL && KEY) {
-      startApp();
+    if(CHANNEL){
+      verifyChannel(CHANNEL, KEY);
     } else {
       fetchChannels();
     }

@@ -11,6 +11,7 @@ import 'package:everlink/ui/widgets/responsive_grid.dart';
 import 'package:everlink/ui/widgets/tool_list_card.dart';
 import 'package:everlink/utils/app_routes.dart';
 import 'package:everlink/utils/ip_calc.dart';
+import 'package:everlink/utils/app_theme.dart';
 
 /// 通用网络调试客户端工具页。
 ///
@@ -35,7 +36,9 @@ class NetworkDebugPage extends StatelessWidget {
           left: 16,
           right: 16,
           top: 16,
-          bottom: 16 + (SettingsService.instance.navFloating ? 100 : 0),
+          bottom: 16 + (SettingsService.instance.navFloating
+            ? AppTheme.floatingNavClearance
+            : 0),
         ),
         child: ResponsiveGrid(
           children: [

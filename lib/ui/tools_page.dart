@@ -9,6 +9,7 @@ import 'package:everlink/ui/network_debug_page.dart';
 import 'package:everlink/ui/server_sim_page.dart';
 import 'package:everlink/ui/widgets/tool_list_card.dart';
 import 'package:everlink/utils/app_routes.dart';
+import 'package:everlink/utils/app_theme.dart';
 
 /// 工具聚合页：承载快传、网络诊断等独立工具入口。
 class ToolsPage extends StatelessWidget {
@@ -23,7 +24,9 @@ class ToolsPage extends StatelessWidget {
           left: 16,
           right: 16,
           top: 16,
-          bottom: 16 + (SettingsService.instance.navFloating ? 100 : 0),
+          bottom: 16 + (SettingsService.instance.navFloating
+            ? AppTheme.floatingNavClearance
+            : 0),
         ),
         child: ResponsiveGrid(
           children: [

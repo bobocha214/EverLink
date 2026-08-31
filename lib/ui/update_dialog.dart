@@ -354,7 +354,7 @@ class _DownloadCardState extends State<_DownloadCard> {
               ],
             ),
           const SizedBox(height: 10),
-          Text('请保持网络畅通，下载完成后将自动弹出安装。',
+          Text('请保持网络畅通，下载完成后点击下方「立即安装」开始升级。',
               style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
         ],
       );

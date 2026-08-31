@@ -140,6 +140,15 @@ class AppTheme {
     ('强', 3),
   ];
 
+  /// 悬浮底栏（胶囊 dock）在垂直方向实际占用的高度（dock 本体 + 底部安全区/外边距）。
+  ///
+  /// 页面需要为它预留底部安全间距（列表底部 padding、抬升 FAB 等），
+  /// 一律引用本常量，避免 dock 尺寸调整后各处魔法数字失同步。
+  /// dock 本体高 80（60 图标 + 上下 10 内边距）；底部在有系统手势条的设备上
+  /// 还要额外预留 viewPadding.bottom（最大约 34），故取 118 作为上限，
+  /// 保证内容既不压住 dock、又不与系统手势条重叠。
+  static const double floatingNavClearance = 118;
+
   /// 玻璃强度 → 模糊 sigma 的映射（悬浮底栏 / 玻璃容器据此取值）。
   static double glassBlur(int strength) {
     switch (strength) {
