@@ -86,3 +86,32 @@ class MqttMessageRecord {
     );
   }
 }
+
+/// 判断消息主题 [topic] 是否匹配订阅 [pattern]（支持 MQTT 通配符 # 与 +）。
+///
+/// - `#` 只能作为最后一段，匹配父层级及所有子层级（如 `test/#` 匹配 `test`、`test/abc`）。
+/// - `+` 匹配单层级任意值（如 `test/+/x` 匹配 `test/abc/x`）。
+/// - 无通配符则为精确相等；`#` 作为独立主题匹配所有。
+bool mqttTopicMatches(String pattern, String topic) {
+  if (pattern == '#') return true;
+  if (pattern == topic) return true;
+  final pLevels = pattern.split('/');
+  final tLevels = topic.split('/');
+  // # 必须出现在末尾：去掉末尾 # 后，前面层级需逐段匹配（+ 通配单层）。
+  if (pLevels.last == '#') {
+    final head = pLevels.sublist(0, pLevels.length - 1);
+    if (head.length > tLevels.length) return false;
+    for (var i = 0; i < head.length; i++) {
+      final h = head[i];
+      if (h != '+' && h != tLevels[i]) return false;
+    }
+    return true;
+  }
+  if (pLevels.length != tLevels.length) return false;
+  for (var i = 0; i < pLevels.length; i++) {
+    final p = pLevels[i];
+    if (p == '+') continue;
+    if (p != tLevels[i]) return false;
+  }
+  return true;
+}

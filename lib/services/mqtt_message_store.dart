@@ -14,7 +14,11 @@ class MqttMessageStore {
   MqttMessageStore._();
 
   static const String _key = 'mqtt_messages_v1';
-  static const int _max = 200;
+
+  /// 单会话保留的最大消息条数。
+  static const int max = 200;
+
+  static const int _max = max;
 
   /// 内存缓冲：key = sessionId，value 为最新在前(insert(0))的消息列表。
   static final Map<String, List<Map<String, dynamic>>> _buffer = {};

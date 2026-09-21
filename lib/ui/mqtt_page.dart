@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -11,9 +10,13 @@ import 'package:everlink/protocols/mqtt_protocol.dart';
 import 'package:everlink/services/connection_manager.dart';
 import 'package:everlink/services/history_service.dart';
 import 'package:everlink/services/mqtt_message_store.dart';
+import 'package:everlink/services/mqtt_messages_cache.dart';
 import 'package:everlink/services/mqtt_topic_store.dart';
 import 'package:everlink/services/session_manager.dart';
 import 'package:everlink/ui/widgets/connection_panel.dart';
+import 'package:everlink/ui/widgets/mqtt_message_tile.dart';
+import 'package:everlink/ui/mqtt_messages_page.dart';
+import 'package:everlink/utils/app_routes.dart';
 
 /// MQTT 调试页：连接 Broker、管理订阅、发布消息，并把收发过程沉淀到历史。
 ///
@@ -54,7 +57,7 @@ class _MqttPageState extends State<MqttPage> {
 
   final List<String> _subscribedTopics = [];
   String? _subFilter;
-  final List<MqttMessageRecord> _messages = [];
+  late final MqttMessagesCache _cache;
   String? _error;
   StreamSubscription<MqttMessageRecord>? _sub;
 
@@ -80,6 +83,10 @@ class _MqttPageState extends State<MqttPage> {
     _willRetain = c.willRetain;
     _manager = SessionManager.instance.ensureManager(widget.session);
     _manager.addListener(_onManagerChanged);
+    _cache = MqttMessagesCache.of(widget.session.id);
+    _cache.addListener(_onCacheChanged);
+    // 幂等绑定消息流：负责“收消息 → 写内存 → 持久化”。本页只额外写全局历史。
+    _cache.bind((_manager.protocol as MqttProtocol).messageStream);
     _sub = (_manager.protocol as MqttProtocol).messageStream.listen(_onMessage);
     _loadHistory();
     _loadTopics();
@@ -96,10 +103,9 @@ class _MqttPageState extends State<MqttPage> {
     });
   }
 
-  /// 收到新消息：插入内存列表、持久化、写入全局历史。
+  /// 收到新消息：持久化与内存更新已由 [MqttMessagesCache]（经 bind）统一处理，
+  /// 本页只负责把“接收”事件写入全局历史。
   void _onMessage(MqttMessageRecord m) {
-    setState(() => _messages.insert(0, m));
-    MqttMessageStore.append(widget.session.id, m);
     HistoryService.instance.add(
       HistoryRecord(
         time: m.receivedAt,
@@ -113,17 +119,20 @@ class _MqttPageState extends State<MqttPage> {
     );
   }
 
-  /// 页面进入时加载该会话的已保存消息（最新在前）。
+  /// 页面进入时从共享缓存载入该会话的已保存消息（最新在前）。
   Future<void> _loadHistory() async {
-    final list = await MqttMessageStore.load(widget.session.id);
     final prefs = await SharedPreferences.getInstance();
     final savedFormat = prefs.getString(_kDefaultFormat);
+    await _cache.ensureLoaded();
     if (!mounted) return;
     setState(() {
-      _messages.addAll(list);
       _defaultFormat = MqttPayloadFormat.fromName(savedFormat);
       _loadingHistory = false;
     });
+  }
+
+  void _onCacheChanged() {
+    if (mounted) setState(() {});
   }
 
   void _onManagerChanged() {
@@ -314,48 +323,11 @@ class _MqttPageState extends State<MqttPage> {
   }
 
   int _countFor(String topic) =>
-      _messages.where((m) => _topicMatches(topic, m.topic)).length;
-
-  /// 判断消息主题 [topic] 是否匹配订阅 [pattern]（支持 MQTT 通配符 # 与 +）。
-  /// - `#` 只能作为最后一段，匹配父层级及所有子层级（如 `test/#` 匹配 `test`、`test/abc`）。
-  /// - `+` 匹配单层级任意值（如 `test/+/x` 匹配 `test/abc/x`）。
-  /// - 无通配符则为精确相等。
-  bool _topicMatches(String pattern, String topic) {
-    if (pattern == '#') return true;
-    if (pattern == topic) return true;
-    final pLevels = pattern.split('/');
-    final tLevels = topic.split('/');
-    // # 必须出现在末尾：去掉末尾 # 后，前面层级需逐段匹配（+ 通配单层）。
-    if (pLevels.last == '#') {
-      final head = pLevels.sublist(0, pLevels.length - 1);
-      if (head.length > tLevels.length) return false;
-      for (var i = 0; i < head.length; i++) {
-        final h = head[i];
-        if (h != '+' && h != tLevels[i]) return false;
-      }
-      return true;
-    }
-    if (pLevels.length != tLevels.length) return false;
-    for (var i = 0; i < pLevels.length; i++) {
-      final p = pLevels[i];
-      if (p == '+') continue;
-      if (p != tLevels[i]) return false;
-    }
-    return true;
-  }
+      _cache.messages.where((m) => mqttTopicMatches(topic, m.topic)).length;
 
   /// 清空当前会话的已保存消息（内存 + 持久化）。
   Future<void> _clearMessages() async {
-    setState(() => _messages.clear());
-    await MqttMessageStore.clear(widget.session.id);
-  }
-
-  /// 切换全局默认展示格式并持久化。
-  void _setDefaultFormat(MqttPayloadFormat format) {
-    if (_defaultFormat == format) return;
-    setState(() => _defaultFormat = format);
-    SharedPreferences.getInstance()
-        .then((p) => p.setString(_kDefaultFormat, format.name));
+    await _cache.clear();
   }
 
   @override
@@ -671,20 +643,10 @@ class _MqttPageState extends State<MqttPage> {
   }
 
   Widget _buildMessagesCard() {
-    // 按主题分组；消息优先归属到“第一个匹配的订阅主题”（支持 #/+ 通配符），
-    // 若不匹配任何订阅则按真实主题分组。实现“按 topic 分类”且通配订阅可用。
-    final Map<String, List<MqttMessageRecord>> groups = {};
-    for (final m in _messages) {
-      final key = _subscribedTopics.firstWhere(
-        (s) => _topicMatches(s, m.topic),
-        orElse: () => m.topic,
-      );
-      (groups[key] ??= []).add(m);
-    }
-    final topics = groups.keys
-        .where((t) => _subFilter == null || _topicMatches(_subFilter!, t))
-        .toList();
-
+    // 主调试页底部只放一个精简摘要卡：显示总数、最新几条预览，并提供
+    // “全屏查看”入口，跳到独立消息页浏览（避免长页面滚到底才能看消息）。
+    final total = _cache.messages.length;
+    final preview = _cache.messages.take(3).toList();
     return Card(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
@@ -695,23 +657,18 @@ class _MqttPageState extends State<MqttPage> {
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Expanded(
-                  child: Text('接收到的消息 (${_messages.length})',
+                  child: Text('接收到的消息 ($total)',
                       style: const TextStyle(
                           fontWeight: FontWeight.bold, fontSize: 15)),
                 ),
-                _FormatDropdown(
-                  value: _defaultFormat,
-                  onChanged: (v) {
-                    if (v == null) return;
-                    _setDefaultFormat(v);
-                  },
-                ),
-                const SizedBox(width: 8),
-                if (_messages.isNotEmpty)
-                  TextButton(
-                    onPressed: _clearMessages,
-                    child: const Text('清空'),
+                FilledButton.icon(
+                  icon: const Icon(Icons.open_in_full, size: 16),
+                  label: const Text('全屏查看'),
+                  onPressed: () => AppRoutes.push(
+                    context,
+                    MqttMessagesPage(session: widget.session),
                   ),
+                ),
               ],
             ),
             const SizedBox(height: 8),
@@ -719,6 +676,7 @@ class _MqttPageState extends State<MqttPage> {
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(8),
+                margin: const EdgeInsets.only(bottom: 8),
                 decoration: BoxDecoration(
                   color: Colors.red.shade50,
                   borderRadius: BorderRadius.circular(6),
@@ -737,58 +695,29 @@ class _MqttPageState extends State<MqttPage> {
                   ),
                 ),
               )
-            else if (_messages.isEmpty)
-              const Text('订阅主题后，收到的消息会按主题分组显示在这里',
-                  style: TextStyle(color: Colors.grey)),
-            if (_subFilter != null)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Chip(
-                  label: Text('筛选：$_subFilter'),
-                  deleteIcon: const Icon(Icons.close, size: 16),
-                  onDeleted: () => setState(() => _subFilter = null),
-                ),
-              ),
-            if (topics.isEmpty && _messages.isNotEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 8),
-                child: Text('当前筛选条件下没有消息',
-                    style: TextStyle(color: Colors.grey)),
-              ),
-            ...topics.map((t) {
-              final items = groups[t]!;
-              return ExpansionTile(
-                tilePadding: EdgeInsets.zero,
-                title: Row(
-                  children: [
-                    Expanded(
-                      child: Text(t,
-                          style: const TextStyle(
-                              fontWeight: FontWeight.w600,
-                              color: Colors.teal,
-                              fontSize: 13)),
+            else if (total == 0)
+              const Text('订阅主题后，收到的消息会按主题分组显示；点“全屏查看”可独立浏览。',
+                  style: TextStyle(color: Colors.grey))
+            else ...[
+              ...preview
+                  .map((m) => MqttMessageTile(record: m, format: _defaultFormat)),
+              if (total > 3)
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: () => AppRoutes.push(
+                      context,
+                      MqttMessagesPage(session: widget.session),
                     ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Colors.teal.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text('${items.length}',
-                          style: const TextStyle(
-                              fontSize: 12, color: Colors.teal)),
-                    ),
-                  ],
+                    child: Text('查看全部 $total 条'),
+                  ),
                 ),
-                children: items
-                    .map((m) => _MessageTile(
-                          record: m,
-                          format: _defaultFormat,
-                        ))
-                    .toList(),
-              );
-            }),
+              if (total > 0)
+                TextButton(
+                  onPressed: _clearMessages,
+                  child: const Text('清空'),
+                ),
+            ],
           ],
         ),
       ),
@@ -798,6 +727,7 @@ class _MqttPageState extends State<MqttPage> {
   @override
   void dispose() {
     _sub?.cancel();
+    _cache.removeListener(_onCacheChanged);
     _manager.removeListener(_onManagerChanged);
     _hostCtl.dispose();
     _portCtl.dispose();
@@ -815,142 +745,3 @@ class _MqttPageState extends State<MqttPage> {
   }
 }
 
-class _MessageTile extends StatelessWidget {
-  const _MessageTile({required this.record, required this.format});
-
-  final MqttMessageRecord record;
-  final MqttPayloadFormat format;
-
-  List<int> get _bytes =>
-      record.bytes.isNotEmpty ? record.bytes : utf8.encode(record.payload);
-
-  String get _displayText {
-    switch (format) {
-      case MqttPayloadFormat.plain:
-        return record.payload;
-      case MqttPayloadFormat.json:
-        try {
-          final decoded = jsonDecode(record.payload);
-          return const JsonEncoder.withIndent('  ').convert(decoded);
-        } catch (_) {
-          return record.payload;
-        }
-      case MqttPayloadFormat.base64:
-        return base64Encode(_bytes);
-      case MqttPayloadFormat.hex:
-        return _bytes
-            .map((b) => b.toRadixString(16).padLeft(2, '0'))
-            .join(' ');
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final time = TimeOfDay.fromDateTime(record.receivedAt).format(context);
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        color: scheme.primary.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(record.topic,
-                    style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        color: scheme.primary,
-                        fontSize: 13)),
-              ),
-              Text(time,
-                  style: const TextStyle(fontSize: 12, color: Colors.grey)),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: scheme.primary.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text('QoS ${record.qos}',
-                    style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
-                        color: scheme.primary)),
-              ),
-              if (record.retain) ...[
-                const SizedBox(width: 6),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: Colors.amber.withValues(alpha: 0.18),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Text('RETAIN',
-                      style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.amber)),
-                ),
-              ],
-            ],
-          ),
-          const SizedBox(height: 6),
-          SelectableText(
-            _displayText,
-            style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// 单条消息的格式切换下拉框（MQTTX 风格）。
-class _FormatDropdown extends StatelessWidget {
-  const _FormatDropdown({required this.value, required this.onChanged});
-
-  final MqttPayloadFormat value;
-  final ValueChanged<MqttPayloadFormat?> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<MqttPayloadFormat>(
-          value: value,
-          isDense: true,
-          icon: Icon(Icons.expand_more, size: 16, color: scheme.primary),
-          style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: scheme.primary),
-          items: MqttPayloadFormat.values
-              .map((f) => DropdownMenuItem(
-                    value: f,
-                    child: Text(f.label),
-                  ))
-              .toList(),
-          onChanged: onChanged,
-        ),
-      ),
-    );
-  }
-}
