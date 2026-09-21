@@ -33,6 +33,13 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # 上游 setup-android 默认 packages 含已废弃的 `tools` 包；Google 自 2026-09-15
+          # 起从仓库移除了该包名，导致本步骤 `Failed to find package 'tools'` / sdkmanager
+          # 退出码 1 而失败。显式声明 packages 覆盖默认，只装仍可用的 platform-tools 以
+          # 避开 tools；其余 SDK 包（platforms;android-36 / build-tools;36.0.0 / ndk）由下方
+          # sdkmanager 步骤安装。参考 android-actions/setup-android#537。
+          packages: 'platform-tools'
 
       - name: Accept licenses & install SDK platform 36
         run: |
